@@ -1,0 +1,8 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+websockets==14.1
+python-dotenv>=1.0.0
+cua-computer>=0.5.14
+cua-agent[all]>=0.7.0
+cua-computer-server>=0.1.0
+httpx>=0.27.0
