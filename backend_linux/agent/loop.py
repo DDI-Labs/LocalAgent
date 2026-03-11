@@ -1,0 +1,244 @@
+"""Core agent loop: screenshot -> model -> parse -> execute -> repeat."""
+
+import logging
+import os
+import shutil
+from pathlib import Path
+from typing import Callable, Optional
+
+from PIL import Image, ImageDraw, ImageFont
+
+from cua import screenshot, executor, parser
+from model import client
+from agent.prompt import SYSTEM_PROMPT, build_task_prompt
+from config import AGENT_MAX_STEPS, AGENT_MAX_CONSECUTIVE_WAITS, DEBUG_DIR, SCREENSHOT_PATH
+
+log = logging.getLogger(__name__)
+
+
+class AgentLoop:
+    """Runs the CUA agent loop for a single task."""
+
+    def __init__(
+        self,
+        task_details: dict,
+        on_status: Optional[Callable[[str, str], None]] = None,
+    ):
+        """
+        Args:
+            task_details: Extracted voice note details dict.
+            on_status: Optional callback(status, message) for real-time updates.
+                       status is one of: 'thinking', 'action', 'done', 'error'.
+        """
+        self.task_details = task_details
+        self.on_status = on_status or (lambda s, m: None)
+        self.messages: list[dict] = []
+        self.step_count = 0
+        self.consecutive_waits = 0
+        self._stopped = False
+        self._debug_dir = Path(DEBUG_DIR)
+        self._setup_debug_dir()
+
+    def _setup_debug_dir(self) -> None:
+        """Create/clean the debug directory for step-by-step screenshots."""
+        if self._debug_dir.exists():
+            shutil.rmtree(self._debug_dir)
+        self._debug_dir.mkdir(parents=True)
+        log.info("Debug screenshots: %s", self._debug_dir)
+
+    def _save_debug_screenshot(self, step: int, action: parser.Action, response: str) -> None:
+        """Save an annotated screenshot showing what the model decided to do."""
+        try:
+            img = Image.open(SCREENSHOT_PATH).copy()
+            draw = ImageDraw.Draw(img)
+
+            # Draw crosshair + circle at click target
+            if action.x is not None and action.y is not None:
+                x, y = action.x, action.y
+                r = 30
+                # Red circle
+                draw.ellipse([x - r, y - r, x + r, y + r], outline="red", width=4)
+                # Crosshair
+                draw.line([x - r * 2, y, x + r * 2, y], fill="red", width=2)
+                draw.line([x, y - r * 2, x, y + r * 2], fill="red", width=2)
+
+                # Drag endpoint
+                if action.x2 is not None and action.y2 is not None:
+                    x2, y2 = action.x2, action.y2
+                    draw.ellipse([x2 - r, y2 - r, x2 + r, y2 + r], outline="blue", width=4)
+                    draw.line([x, y, x2, y2], fill="yellow", width=3)
+
+            # Draw text label at the top
+            thought = action.thought or ""
+            label = f"Step {step}: {action.type}"
+            if action.text:
+                label += f"({action.text[:40]})"
+            elif action.x is not None:
+                label += f"({action.x}, {action.y})"
+
+            # Background bar for text
+            draw.rectangle([0, 0, img.width, 60], fill=(0, 0, 0, 180))
+            draw.text((10, 5), label, fill="white")
+            if thought:
+                draw.text((10, 30), thought[:120], fill="yellow")
+
+            # Save
+            out_path = self._debug_dir / f"step_{step:02d}.png"
+            img.save(str(out_path))
+
+            # Also save as "latest.png" for live viewing
+            latest_path = self._debug_dir / "latest.png"
+            img.save(str(latest_path))
+
+            log.info("Debug screenshot saved: %s", out_path)
+        except Exception as e:
+            log.warning("Failed to save debug screenshot: %s", e)
+
+    def stop(self) -> None:
+        """Signal the loop to stop after the current step."""
+        self._stopped = True
+
+    def _emit(self, status: str, msg: str) -> None:
+        log.info("[%s] %s", status, msg)
+        self.on_status(status, msg)
+
+    def _build_initial_messages(self) -> list[dict]:
+        task_prompt = build_task_prompt(self.task_details)
+        return [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": task_prompt},
+        ]
+
+    def run(self) -> dict:
+        """Execute the agent loop. Returns a result dict.
+
+        Returns:
+            {
+                "outcome": "granted" | "denied" | "error" | "stopped" | "max_steps",
+                "reason": str,
+                "steps": int,
+            }
+        """
+        self.messages = self._build_initial_messages()
+        screen_w, screen_h = screenshot.get_screen_size()
+
+        self._emit("thinking", "Starting task...")
+
+        for step in range(1, AGENT_MAX_STEPS + 1):
+            if self._stopped:
+                return {"outcome": "stopped", "reason": "Agent stopped by user.", "steps": step}
+
+            self.step_count = step
+            self._emit("thinking", f"Step {step}/{AGENT_MAX_STEPS}: Taking screenshot...")
+
+            # 1. Capture screenshot
+            try:
+                img_b64 = screenshot.capture_and_encode()
+            except RuntimeError as e:
+                self._emit("error", str(e))
+                return {"outcome": "error", "reason": str(e), "steps": step}
+
+            # 2. Send to model
+            self._emit("thinking", f"Step {step}/{AGENT_MAX_STEPS}: Asking model...")
+
+            self.messages.append({
+                "role": "user",
+                "content": "Here is the current screenshot. What action should I take next?",
+                "images": [img_b64],
+            })
+
+            try:
+                response = client.chat(self.messages)
+            except RuntimeError as e:
+                self._emit("error", str(e))
+                return {"outcome": "error", "reason": str(e), "steps": step}
+
+            # Add assistant response to conversation history
+            self.messages.append({
+                "role": "assistant",
+                "content": response,
+            })
+
+            # 3. Parse action
+            action = parser.parse(response, screen_w, screen_h)
+
+            # Save annotated debug screenshot
+            self._save_debug_screenshot(step, action, response)
+
+            if action.thought:
+                self._emit("thinking", action.thought)
+
+            # 4. Check for completion
+            if action.type == "done":
+                outcome, reason = self._extract_decision(action.thought or response)
+                self._emit("done", f"Decision: {outcome.upper()} — {reason}")
+                return {"outcome": outcome, "reason": reason, "steps": step}
+
+            # 5. Check wait loop
+            if action.type == "wait":
+                self.consecutive_waits += 1
+                if self.consecutive_waits >= AGENT_MAX_CONSECUTIVE_WAITS:
+                    self._emit("error", "Agent stuck in wait loop, stopping.")
+                    return {
+                        "outcome": "error",
+                        "reason": "Stuck in wait loop.",
+                        "steps": step,
+                    }
+            else:
+                self.consecutive_waits = 0
+
+            # 6. Execute action
+            self._emit("action", f"Step {step}: {action.type}({self._action_summary(action)})")
+            try:
+                self._execute(action)
+            except Exception as e:
+                self._emit("error", f"Action execution failed: {e}")
+                return {"outcome": "error", "reason": str(e), "steps": step}
+
+        self._emit("error", f"Reached max steps ({AGENT_MAX_STEPS}).")
+        return {"outcome": "max_steps", "reason": "Max steps reached.", "steps": AGENT_MAX_STEPS}
+
+    def _execute(self, action: parser.Action) -> None:
+        """Dispatch an action to the executor."""
+        match action.type:
+            case "click":
+                executor.click(action.x, action.y)
+            case "double_click":
+                executor.double_click(action.x, action.y)
+            case "right_click":
+                executor.right_click(action.x, action.y)
+            case "type":
+                executor.type_text(action.text)
+            case "hotkey":
+                executor.hotkey(action.text)
+            case "scroll":
+                executor.scroll(action.x, action.y, action.direction)
+            case "drag":
+                executor.drag(action.x, action.y, action.x2, action.y2)
+            case "wait":
+                executor.wait()
+
+    def _extract_decision(self, text: str) -> tuple[str, str]:
+        """Try to extract grant/deny decision from the model's conclusion."""
+        lower = text.lower() if text else ""
+        if "grant" in lower or "approve" in lower or "allow" in lower:
+            return "granted", text
+        elif "deny" in lower or "denied" in lower or "reject" in lower:
+            return "denied", text
+        return "unknown", text
+
+    def _action_summary(self, action: parser.Action) -> str:
+        """Short human-readable summary of an action."""
+        match action.type:
+            case "click" | "double_click" | "right_click":
+                return f"{action.x}, {action.y}"
+            case "type":
+                return repr(action.text[:30]) if action.text else ""
+            case "hotkey":
+                return action.text or ""
+            case "scroll":
+                return f"{action.x}, {action.y}, {action.direction}"
+            case "drag":
+                return f"{action.x},{action.y} -> {action.x2},{action.y2}"
+            case _:
+                return ""
