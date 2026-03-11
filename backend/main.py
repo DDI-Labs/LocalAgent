@@ -22,6 +22,8 @@ async def lifespan(app: FastAPI):
     try:
         await agent.initialize()
         logger.info("ComputerAgent ready.")
+        # Eagerly load the vision model so the first prompt is instant.
+        await agent.preload_model()
     except Exception as e:
         logger.warning(f"ComputerAgent failed to initialize: {e}")
         logger.warning("The agent won't work until services are available. Check:")

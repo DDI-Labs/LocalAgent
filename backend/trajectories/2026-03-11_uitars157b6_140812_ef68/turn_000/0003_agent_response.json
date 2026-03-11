@@ -1,0 +1,70 @@
+{
+  "timestamp": "139924913358175770",
+  "model": "mlx/mlx-community/UI-TARS-1.5-7B-6bit",
+  "kwargs": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "You are controlling a macOS desktop. CRITICAL RULES:\n- To open apps: hotkey(key='command space'), then type(content='AppName'). Enter will be pressed automatically after typing.\n- Do NOT press enter yourself after typing in Spotlight. It is handled automatically.\n- Do NOT look for taskbar/dock icons. Use Spotlight only.\n- After typing an app name, wait() for the app to load.\n- When searching in apps like Spotify, YouTube, or browsers, use your knowledge to understand what the user means. For example, 'bohemian rhapsody' is a song by Queen, 'Taylor Swift' is an artist, 'Dark Side of the Moon' is an album. After searching, click the correct category (Songs, Artists, Albums) if available, then click the correct result.\n"
+      },
+      {
+        "role": "user",
+        "content": "hello"
+      }
+    ],
+    "model": "mlx/mlx-community/UI-TARS-1.5-7B-6bit",
+    "tools": [
+      {
+        "type": "computer",
+        "computer": "<computer:Computer>"
+      }
+    ],
+    "stream": false,
+    "computer_handler": "<computer:cuaComputerHandler>",
+    "max_retries": 3,
+    "use_prompt_caching": true
+  },
+  "response": {
+    "output": [
+      {
+        "content": [
+          {
+            "type": "input_image",
+            "image_url": "[omitted]"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      },
+      {
+        "id": "465c0aa8-e576-4b7c-ae3c-51fb24493eca",
+        "summary": [
+          {
+            "text": "I noticed that the user simply typed \"hello\" in the input box, which is a very basic greeting. However, since the user didn't provide any specific instructions, I think it's best to keep things simple and just respond with \"hello\" as well. This way, we can maintain a basic level of interaction.",
+            "type": "summary_text"
+          }
+        ],
+        "type": "reasoning"
+      },
+      {
+        "id": "b08c5ed4-6621-4126-a4a4-c5c9357f7f15",
+        "content": [
+          {
+            "text": "hello",
+            "type": "output_text",
+            "annotations": []
+          }
+        ],
+        "role": "assistant",
+        "status": "completed",
+        "type": "message"
+      }
+    ],
+    "usage": {
+      "input_tokens": 10,
+      "output_tokens": 20,
+      "total_tokens": 30
+    }
+  },
+  "created_at": "139924913358176250"
+}

@@ -1,0 +1,98 @@
+{
+  "timestamp": "139924915092146920",
+  "model": "mlx/mlx-community/UI-TARS-1.5-7B-6bit",
+  "kwargs": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "You are controlling a macOS desktop. CRITICAL RULES:\n- To open apps: hotkey(key='command space'), then type(content='AppName'). Enter will be pressed automatically after typing.\n- Do NOT press enter yourself after typing in Spotlight. It is handled automatically.\n- Do NOT look for taskbar/dock icons. Use Spotlight only.\n- After typing an app name, wait() for the app to load.\n- When searching in apps like Spotify, YouTube, or browsers, use your knowledge to understand what the user means. For example, 'bohemian rhapsody' is a song by Queen, 'Taylor Swift' is an artist, 'Dark Side of the Moon' is an album. After searching, click the correct category (Songs, Artists, Albums) if available, then click the correct result.\n"
+      },
+      {
+        "role": "user",
+        "content": "You are controlling a macOS desktop. CRITICAL RULES:\n- To open apps: hotkey(key='command space'), then type(content='AppName'). Enter will be pressed automatically after typing.\n- Do NOT press enter yourself after typing in Spotlight. It is handled automatically.\n- Do NOT look for taskbar/dock icons. Use Spotlight only.\n- After typing an app name, wait() for the app to load.\n- When searching in apps like Spotify, YouTube, or browsers, use your knowledge to understand what the user means. For example, 'bohemian rhapsody' is a song by Queen, 'Taylor Swift' is an artist, 'Dark Side of the Moon' is an album. After searching, click the correct category (Songs, Artists, Albums) if available, then click the correct result.\n\n\nTask: spotify is already open and in the foreground. Do NOT open spotify again. Do NOT use Spotlight. To search in spotify, click the search icon or search bar inside the spotify window first, then type your query. Do NOT type into any other field. Task: play a drake song"
+      },
+      {
+        "content": [
+          {
+            "type": "input_image",
+            "image_url": "[omitted]"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      },
+      {
+        "id": "54a4d021-1184-4f44-8767-1915d349bbd8",
+        "summary": [
+          {
+            "text": "I noticed that the search bar is still empty, which suggests that my previous input didn't go through successfully. Let me try again by typing \"drake\" into the search bar. This way, I can find all of his songs and start playing them.",
+            "type": "summary_text"
+          }
+        ],
+        "type": "reasoning"
+      },
+      {
+        "id": "0c9e34f5-5d80-4395-92e8-5b0b93c68182",
+        "call_id": "c8957b70-3200-453e-8d3d-253ad41fefa0",
+        "action": {
+          "text": "drake",
+          "type": "type"
+        },
+        "pending_safety_checks": [],
+        "status": "completed",
+        "type": "computer_call"
+      },
+      {
+        "type": "computer_call_output",
+        "call_id": "c8957b70-3200-453e-8d3d-253ad41fefa0",
+        "acknowledged_safety_checks": [],
+        "output": {
+          "type": "input_image",
+          "image_url": "[omitted]"
+        }
+      }
+    ],
+    "model": "mlx/mlx-community/UI-TARS-1.5-7B-6bit",
+    "tools": [
+      {
+        "type": "computer",
+        "computer": "<computer:Computer>"
+      }
+    ],
+    "stream": false,
+    "computer_handler": "<computer:cuaComputerHandler>",
+    "max_retries": 3,
+    "use_prompt_caching": true
+  },
+  "response": {
+    "output": [
+      {
+        "id": "43afb3f3-8cff-4361-81ea-9f3b07930ecf",
+        "summary": [
+          {
+            "text": "I glanced at the search bar, and it was still empty. It seems that my previous input didn't take effect. I need to type \"drake\" into the search bar again so that I can find his songs and start playing them.",
+            "type": "summary_text"
+          }
+        ],
+        "type": "reasoning"
+      },
+      {
+        "id": "b34e99bd-775e-4ec2-b9b6-16f53d63b951",
+        "call_id": "887c5270-1dd3-4c15-89e8-9bb6f122a6ba",
+        "action": {
+          "text": "drake",
+          "type": "type"
+        },
+        "pending_safety_checks": [],
+        "status": "completed",
+        "type": "computer_call"
+      }
+    ],
+    "usage": {
+      "input_tokens": 10,
+      "output_tokens": 20,
+      "total_tokens": 30
+    }
+  },
+  "created_at": "139924915092147280"
+}

@@ -8,9 +8,29 @@ from typing import Callable
 
 from computer import Computer
 from agent import ComputerAgent
+from agent.callbacks import (
+    ImageRetentionCallback,
+    LoggingCallback,
+    OperatorNormalizerCallback,
+    TrajectorySaverCallback,
+)
 
-from app_core.config import CUA_MODEL, CUA_COMPUTER_SERVER_HOST, CUA_COMPUTER_SERVER_PORT
-from app_core.image_optimizer import ImageOptimizerCallback
+from app_core.config import (
+    CUA_MODEL,
+    CUA_COMPUTER_SERVER_HOST,
+    CUA_COMPUTER_SERVER_PORT,
+    IMAGE_RETENTION_COUNT,
+    TRAJECTORY_DIR,
+    TRAJECTORY_SCREENSHOT_DIR,
+)
+from app_core.callbacks import (
+    HistoryTrimCallback,
+    ImageOptimizerCallback,
+    RunGuardCallback,
+    SecurityBlockedError,
+    SecurityInterceptionCallback,
+    WebSocketStatusCallback,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,12 +41,11 @@ _computer: Computer | None = None
 _agent: ComputerAgent | None = None
 _history: list[dict] = []
 _running = False
-# Track last action to auto-inject Enter after typing in Spotlight
-_last_action_was_type = False
+# Track Spotlight flow for auto-Enter injection
 _spotlight_open = False
-# Maximum consecutive wait() actions before we force-break the loop.
-# The 7B model tends to get stuck in wait() spirals when it can't see progress.
-MAX_CONSECUTIVE_WAITS = 3
+# Callbacks that need per-task updates (set during initialize)
+_ws_status_cb: WebSocketStatusCallback | None = None
+_run_guard_cb: RunGuardCallback | None = None
 
 # System instructions for the model. Kept short to minimise prefill tokens.
 _MACOS_INSTRUCTIONS = (
@@ -37,6 +56,11 @@ _MACOS_INSTRUCTIONS = (
     "- Do NOT press enter yourself after typing in Spotlight. It is handled automatically.\n"
     "- Do NOT look for taskbar/dock icons. Use Spotlight only.\n"
     "- After typing an app name, wait() for the app to load.\n"
+    "- When searching in apps like Spotify, YouTube, or browsers, use your knowledge "
+    "to understand what the user means. For example, 'bohemian rhapsody' is a song by Queen, "
+    "'Taylor Swift' is an artist, 'Dark Side of the Moon' is an album. "
+    "After searching, click the correct category (Songs, Artists, Albums) if available, "
+    "then click the correct result.\n"
 )
 
 # Regex to detect simple "open <app>" tasks (no further instructions).
@@ -56,7 +80,7 @@ _OPEN_APP_THEN_PATTERN = re.compile(
 
 async def initialize():
     """Connect to the Cua computer server and create the agent."""
-    global _computer, _agent
+    global _computer, _agent, _ws_status_cb, _run_guard_cb
 
     _computer = Computer(
         use_host_computer_server=True,
@@ -65,16 +89,72 @@ async def initialize():
     )
     await _computer.run()
 
+    # --- Callback stack ---
+    # Order matters: normalisation and security run first, then memory/image
+    # optimisation, then observability/audit, and finally housekeeping.
+    _ws_status_cb = WebSocketStatusCallback()   # broadcast fn set per-task
+    _run_guard_cb = RunGuardCallback()
+
+    callbacks = [
+        # 1. Normalise malformed LLM output (hotkey→keypress, string keys→list, etc.)
+        OperatorNormalizerCallback(),
+        # 2. Security: intercept and block dangerous actions before execution
+        SecurityInterceptionCallback(),
+        # 3. Run guard: halt on consecutive wait() loops or wall-clock timeout
+        _run_guard_cb,
+        # 4. Memory safety: keep only N most recent screenshots in context
+        ImageRetentionCallback(only_n_most_recent_images=IMAGE_RETENTION_COUNT),
+        # 5. Image optimization: downscale/compress screenshots before LLM inference
+        ImageOptimizerCallback(),
+        # 6. Structured lifecycle logging
+        LoggingCallback(level=logging.INFO),
+        # 7. Audit trail: save full trajectory (screenshots, prompts, coordinates)
+        TrajectorySaverCallback(
+            trajectory_dir=TRAJECTORY_DIR,
+            screenshot_dir=TRAJECTORY_SCREENSHOT_DIR,
+        ),
+        # 8. Broadcast detailed action status to WebSocket clients
+        _ws_status_cb,
+        # 9. Trim conversation history to prevent unbounded memory growth
+        HistoryTrimCallback(history=_history, max_entries=50),
+    ]
+
     _agent = ComputerAgent(
         model=CUA_MODEL,
         tools=[_computer],
-        only_n_most_recent_images=1,
-        max_trajectory_budget=50.0,
-        callbacks=[ImageOptimizerCallback()],
+        max_trajectory_budget=25.0,
+        callbacks=callbacks,
         instructions=_MACOS_INSTRUCTIONS,
         use_prompt_caching=True,
     )
-    logger.info(f"ComputerAgent initialized with model={CUA_MODEL}")
+    logger.info(
+        f"ComputerAgent initialized with model={CUA_MODEL}, "
+        f"image_retention={IMAGE_RETENTION_COUNT}, "
+        f"trajectory_dir={TRAJECTORY_DIR}, "
+        f"callbacks={len(callbacks)}"
+    )
+
+
+async def preload_model():
+    """Eagerly load the vision model into memory.
+
+    Called during startup so the first user prompt doesn't pay the
+    model-load penalty (~10-30s depending on hardware).
+    """
+    if _agent is None:
+        logger.warning("Cannot preload: agent not initialized.")
+        return
+    # Run a no-op inference to force model weight loading.
+    # The agent expects a conversation, so we send a trivial one.
+    logger.info("Preloading vision model into memory...")
+    try:
+        dummy_history = [{"role": "user", "content": "hello"}]
+        async for _ in _agent.run(dummy_history):
+            pass
+    except Exception as e:
+        # Non-fatal — the model will load on first real prompt instead.
+        logger.warning(f"Model preload failed (non-fatal): {e}")
+    logger.info("Vision model preloaded.")
 
 
 async def shutdown():
@@ -131,7 +211,9 @@ async def open_app(name: str) -> bool:
 _APP_ACTIONS: dict[str, list[tuple[re.Pattern, str, str]]] = {
     # Each entry: (regex matching the remaining_task, applescript command, human description)
     "spotify": [
-        (re.compile(r"play|start\s+(?:a\s+)?(?:song|music|track|playlist)", re.I),
+        # Only resume playback for bare "play"/"resume" with no extra words.
+        # "play a drake song" must NOT match — it should fall through to the AI.
+        (re.compile(r"^(?:play|resume|start playing|start music|start playback)$", re.I),
          'tell application "Spotify" to play', "Started playback"),
         (re.compile(r"pause|stop", re.I),
          'tell application "Spotify" to pause', "Paused playback"),
@@ -143,7 +225,7 @@ _APP_ACTIONS: dict[str, list[tuple[re.Pattern, str, str]]] = {
          'tell application "Spotify" to set shuffling to (not shuffling)', "Toggled shuffle"),
     ],
     "music": [  # Apple Music
-        (re.compile(r"play|start", re.I),
+        (re.compile(r"^(?:play|resume|start playing|start music|start playback)$", re.I),
          'tell application "Music" to play', "Started playback"),
         (re.compile(r"pause|stop", re.I),
          'tell application "Music" to pause', "Paused playback"),
@@ -151,6 +233,57 @@ _APP_ACTIONS: dict[str, list[tuple[re.Pattern, str, str]]] = {
          'tell application "Music" to next track', "Skipped to next track"),
         (re.compile(r"prev(?:ious)?|go\s*back", re.I),
          'tell application "Music" to previous track', "Went to previous track"),
+    ],
+    "safari": [
+        (re.compile(r"go\s+to\s+(.+)", re.I),
+         'tell application "Safari" to set URL of front document to "{0}"',
+         "Navigated to URL"),
+        (re.compile(r"new\s+(?:tab|window)", re.I),
+         'tell application "Safari" to make new document', "Opened new tab"),
+    ],
+    "finder": [
+        (re.compile(r"new\s+(?:window|folder)", re.I),
+         'tell application "Finder" to make new Finder window', "Opened new Finder window"),
+        (re.compile(r"(?:go\s+to\s+)?desktop", re.I),
+         'tell application "Finder" to set target of front Finder window to (path to desktop)',
+         "Navigated to Desktop"),
+        (re.compile(r"(?:go\s+to\s+)?documents", re.I),
+         'tell application "Finder" to set target of front Finder window to (path to documents folder)',
+         "Navigated to Documents"),
+        (re.compile(r"(?:go\s+to\s+)?downloads", re.I),
+         'tell application "Finder" to set target of front Finder window to folder "Downloads" of (path to home folder)',
+         "Navigated to Downloads"),
+    ],
+    "notes": [
+        (re.compile(r"new\s+note|create\s+(?:a\s+)?note", re.I),
+         'tell application "Notes" to make new note at folder "Notes"', "Created new note"),
+    ],
+    "messages": [
+        (re.compile(r"new\s+(?:message|conversation)", re.I),
+         'tell application "Messages" to activate', "Opened Messages"),
+    ],
+    "terminal": [
+        (re.compile(r"new\s+(?:window|tab)", re.I),
+         'tell application "Terminal" to do script ""', "Opened new Terminal window"),
+    ],
+    "system preferences": [
+        (re.compile(r"display|screen|brightness", re.I),
+         'tell application "System Preferences" to reveal pane id "com.apple.preference.displays"',
+         "Opened Display settings"),
+        (re.compile(r"sound|volume|audio", re.I),
+         'tell application "System Preferences" to reveal pane id "com.apple.preference.sound"',
+         "Opened Sound settings"),
+        (re.compile(r"network|wifi|internet", re.I),
+         'tell application "System Preferences" to reveal pane id "com.apple.preference.network"',
+         "Opened Network settings"),
+    ],
+    "system settings": [
+        (re.compile(r"display|screen|brightness", re.I),
+         'tell application "System Settings" to activate', "Opened System Settings"),
+        (re.compile(r"sound|volume|audio", re.I),
+         'tell application "System Settings" to activate', "Opened System Settings"),
+        (re.compile(r"network|wifi|internet", re.I),
+         'tell application "System Settings" to activate', "Opened System Settings"),
     ],
 }
 
@@ -164,7 +297,14 @@ async def _try_app_action(app_name: str, task: str) -> str | None:
     if not actions:
         return None
     for pattern, script, description in actions:
-        if pattern.search(task):
+        match = pattern.search(task)
+        if match:
+            # Support {0} placeholder for captured groups (e.g. Spotify search, Safari URL)
+            captured = match.group(1).strip() if match.groups() else ""
+            if captured and "{0}" in script:
+                script = script.format(captured)
+            if captured and "{0}" in description:
+                description = description.format(captured)
             ok, err = await _run_osascript(script)
             if ok:
                 logger.info(f"App-action macro: {description} ({app_name})")
@@ -194,7 +334,7 @@ async def run_agent_task(prompt: str, broadcast: StatusCallback | None = None):
     Maintains conversation history for multi-turn context.
     Streams status updates via the broadcast callback.
     """
-    global _running, _last_action_was_type, _spotlight_open
+    global _running, _spotlight_open
 
     if not is_ready():
         raise RuntimeError("Agent not initialized. Call initialize() first.")
@@ -207,9 +347,12 @@ async def run_agent_task(prompt: str, broadcast: StatusCallback | None = None):
             broadcast(status, msg)
 
     _running = True
-    _last_action_was_type = False
     _spotlight_open = False
-    _consecutive_waits = 0
+
+    # Wire the per-task broadcast into the WebSocket status callback
+    if _ws_status_cb is not None:
+        _ws_status_cb.set_broadcast(broadcast)
+
     try:
         # --- Fast-path: open apps via osascript instead of the vision loop ---
         stripped = prompt.strip()
@@ -234,10 +377,14 @@ async def run_agent_task(prompt: str, broadcast: StatusCallback | None = None):
                     return
                 # No macro matched — fall through to agent with rewritten prompt.
                 # Tell the model the app is already open so it doesn't re-open it.
+                # Give explicit UI guidance so the 7B model finds the right field.
                 prompt = (
                     f"{app_name} is already open and in the foreground. "
                     f"Do NOT open {app_name} again. Do NOT use Spotlight. "
-                    f"Just {remaining_task}"
+                    f"To search in {app_name}, click the search icon or search bar "
+                    f"inside the {app_name} window first, then type your query. "
+                    f"Do NOT type into any other field. "
+                    f"Task: {remaining_task}"
                 )
                 logger.info(f"Fast-path opened '{app_name}', agent gets: {prompt}")
             else:
@@ -277,24 +424,6 @@ async def run_agent_task(prompt: str, broadcast: StatusCallback | None = None):
                 elif msg_type == "computer_call":
                     action = item.get("action", {})
                     action_type = action.get("type", "unknown")
-                    _send("action", f"Performing: {action_type}")
-
-                    # --- Consecutive wait() loop breaker ---
-                    if action_type == "wait":
-                        _consecutive_waits += 1
-                        if _consecutive_waits >= MAX_CONSECUTIVE_WAITS:
-                            logger.warning(
-                                f"Breaking out: {_consecutive_waits} consecutive wait() "
-                                "actions — model is stuck."
-                            )
-                            _send("error", "Agent stuck in wait loop, stopping task.")
-                            _history.append({
-                                "role": "assistant",
-                                "content": "I got stuck waiting. Task stopped.",
-                            })
-                            return
-                    else:
-                        _consecutive_waits = 0
 
                     # Track Spotlight flow — try osascript fast-path first,
                     # fall back to auto-Enter injection.
@@ -302,7 +431,6 @@ async def run_agent_task(prompt: str, broadcast: StatusCallback | None = None):
                         keys = action.get("keys", [])
                         if set(keys) == {"command", "space"} or set(keys) == {"cmd", "space"}:
                             _spotlight_open = True
-                            _last_action_was_type = False
                             logger.info("Detected Spotlight open")
                     elif action_type == "type" and _spotlight_open:
                         app_name = action.get("content", "") or action.get("text", "")
@@ -315,14 +443,31 @@ async def run_agent_task(prompt: str, broadcast: StatusCallback | None = None):
                             logger.info("Falling back to auto-Enter after Spotlight type")
                             await _auto_enter_after_type()
                         _spotlight_open = False
-                        _last_action_was_type = False
 
-        _send("done", "Task complete.")
+        # Check if RunGuardCallback halted the run
+        if _run_guard_cb and _run_guard_cb.halt_reason:
+            _send("error", _run_guard_cb.halt_reason)
+            _history.append({
+                "role": "assistant",
+                "content": _run_guard_cb.halt_reason,
+            })
+        else:
+            _send("done", "Task complete.")
+
+    except SecurityBlockedError as e:
+        logger.warning(f"Action blocked by security policy: {e}")
+        _send("blocked", f"Security policy blocked an action: {e}")
+        _history.append({
+            "role": "assistant",
+            "content": f"Action blocked by security policy: {e}",
+        })
     except Exception as e:
         logger.exception("Agent task failed")
         _send("error", f"Agent error: {e}")
     finally:
         _running = False
+        if _ws_status_cb is not None:
+            _ws_status_cb.set_broadcast(None)
 
 
 def reset_history():

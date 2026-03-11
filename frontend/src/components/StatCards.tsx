@@ -1,4 +1,4 @@
-import { Activity, Cpu, Zap } from "lucide-react";
+import { Activity, Cpu, Zap, ShieldX } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface StatCardsProps {
@@ -18,8 +18,9 @@ export function StatCards({ isConnected, currentTask }: StatCardsProps) {
     {
       label: "Current Task",
       value: currentTask,
-      icon: Zap,
-      dot: false,
+      icon: currentTask === "Blocked" ? ShieldX : Zap,
+      dot: currentTask === "Blocked" || currentTask === "Error",
+      dotColor: currentTask === "Blocked" ? "bg-blocked" : "bg-danger",
     },
     {
       label: "System",

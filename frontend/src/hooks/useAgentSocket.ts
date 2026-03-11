@@ -35,6 +35,9 @@ export function useAgentSocket() {
         } else if (data.status === "error") {
           setCurrentTask("Error");
           setIsAgentBusy(false);
+        } else if (data.status === "blocked") {
+          setCurrentTask("Blocked");
+          setIsAgentBusy(false);
         } else if (data.status === "thinking") {
           setCurrentTask(data.msg?.slice(0, 40) ?? "Thinking...");
           setIsAgentBusy(true);

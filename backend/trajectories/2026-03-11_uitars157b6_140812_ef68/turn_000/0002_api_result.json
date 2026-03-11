@@ -1,0 +1,55 @@
+{
+  "kwargs": {
+    "model": "mlx/mlx-community/UI-TARS-1.5-7B-6bit",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a helpful assistant."
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "You are a GUI agent. You are given a task and your action history, with screenshots. You need to perform the next action to complete the task. \n\n## Output Format\n```\nThought: ...\nAction: ...\n```\n\n## Action Space\n\nclick(start_box='<|box_start|>(x1,y1)<|box_end|>')\nleft_double(start_box='<|box_start|>(x1,y1)<|box_end|>')\nright_single(start_box='<|box_start|>(x1,y1)<|box_end|>')\ndrag(start_box='<|box_start|>(x1,y1)<|box_end|>', end_box='<|box_start|>(x3,y3)<|box_end|>')\nhotkey(key='')\ntype(content='') #If you want to submit your input, use \"\\n\" at the end of `content`.\nscroll(start_box='<|box_start|>(x1,y1)<|box_end|>', direction='down or up or right or left')\nwait() #Sleep for 5s and take a screenshot to check for any changes.\nfinished(content='xxx') # Use escape characters \\', \\\", and \\n in content part to ensure we can parse the content in normal python string format.\n\n\n## Note\n- Use English in `Thought` part.\n- Write a small plan and finally summarize your next action (with its target element) in one sentence in `Thought` part.\n\n## User Instruction\nhello\n"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "image_url",
+            "image_url": "[omitted]"
+          }
+        ]
+      }
+    ],
+    "max_tokens": 500,
+    "temperature": 0.0,
+    "do_sample": false,
+    "num_retries": 3
+  },
+  "result": {
+    "id": "chatcmpl-be82ff84-1186-489d-9dd6-b8763b060543",
+    "created": 1773198535,
+    "model": "mlx-community/UI-TARS-1.5-7B-6bit",
+    "object": "chat.completion",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "Thought: I noticed that the user simply typed \"hello\" in the input box, which is a very basic greeting. However, since the user didn't provide any specific instructions, I think it's best to keep things simple and just respond with \"hello\" as well. This way, we can maintain a basic level of interaction.\nAction: finished(content='hello')",
+          "role": "assistant"
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 20,
+      "prompt_tokens": 10,
+      "total_tokens": 30
+    }
+  },
+  "created_at": "139924913353464950"
+}

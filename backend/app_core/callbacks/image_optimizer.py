@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Target max dimension (width or height) for screenshots sent to the LLM.
 # 1280px is plenty for the model to see UI elements — no need for full Retina.
-TARGET_MAX_DIMENSION = 1280
+TARGET_MAX_DIMENSION = 1024
 
 # JPEG quality (0-100). 60 is a good balance of quality vs size.
 JPEG_QUALITY = 60

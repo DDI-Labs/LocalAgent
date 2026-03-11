@@ -1,5 +1,14 @@
 import { useRef, useEffect } from "react";
-import { Terminal, Trash2 } from "lucide-react";
+import {
+  Terminal,
+  Trash2,
+  Brain,
+  Play,
+  CheckCircle2,
+  XCircle,
+  ShieldX,
+  Info,
+} from "lucide-react";
 import type { LogEntry } from "@/hooks/useAgentSocket";
 import { cn } from "@/lib/utils";
 
@@ -13,7 +22,17 @@ const statusColor: Record<string, string> = {
   action: "text-accent",
   done: "text-success",
   error: "text-danger",
+  blocked: "text-blocked",
   info: "text-text-secondary",
+};
+
+const statusIcon: Record<string, typeof Terminal> = {
+  thinking: Brain,
+  action: Play,
+  done: CheckCircle2,
+  error: XCircle,
+  blocked: ShieldX,
+  info: Info,
 };
 
 export function ProcessMonitor({ logs, onClear }: ProcessMonitorProps) {
@@ -52,22 +71,27 @@ export function ProcessMonitor({ logs, onClear }: ProcessMonitorProps) {
             Waiting for agent activity...
           </p>
         ) : (
-          logs.map((log) => (
-            <div key={log.id} className="flex gap-2">
-              <span className="shrink-0 text-text-secondary/50">
-                [{log.timestamp}]
-              </span>
-              <span
-                className={cn(
-                  "shrink-0 font-medium uppercase",
-                  statusColor[log.status] ?? "text-text-secondary",
-                )}
-              >
-                {log.status}
-              </span>
-              <span className="text-text-primary">{log.msg}</span>
-            </div>
-          ))
+          logs.map((log) => {
+            const Icon = statusIcon[log.status];
+            const color = statusColor[log.status] ?? "text-text-secondary";
+            return (
+              <div key={log.id} className="flex items-start gap-2">
+                <span className="shrink-0 text-text-secondary/50">
+                  [{log.timestamp}]
+                </span>
+                <span
+                  className={cn(
+                    "flex shrink-0 items-center gap-1 font-medium uppercase",
+                    color,
+                  )}
+                >
+                  {Icon && <Icon className="h-3 w-3" />}
+                  {log.status}
+                </span>
+                <span className="text-text-primary">{log.msg}</span>
+              </div>
+            );
+          })
         )}
         <div ref={bottomRef} />
       </div>

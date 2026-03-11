@@ -1,0 +1,27 @@
+{
+  "item": {
+    "id": "a06830e7-4c38-4001-949b-5bf779c0016e",
+    "call_id": "2c3a8517-2c55-4617-bf9a-c61e0950d634",
+    "action": {
+      "button": "left",
+      "type": "click",
+      "x": 1754,
+      "y": 204
+    },
+    "pending_safety_checks": [],
+    "status": "completed",
+    "type": "computer_call"
+  },
+  "result": [
+    {
+      "type": "computer_call_output",
+      "call_id": "2c3a8517-2c55-4617-bf9a-c61e0950d634",
+      "acknowledged_safety_checks": [],
+      "output": {
+        "type": "input_image",
+        "image_url": "[omitted]"
+      }
+    }
+  ],
+  "created_at": "139924914568866110"
+}

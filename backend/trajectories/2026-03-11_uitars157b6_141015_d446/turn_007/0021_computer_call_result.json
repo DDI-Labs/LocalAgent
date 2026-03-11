@@ -1,0 +1,25 @@
+{
+  "item": {
+    "id": "b34e99bd-775e-4ec2-b9b6-16f53d63b951",
+    "call_id": "887c5270-1dd3-4c15-89e8-9bb6f122a6ba",
+    "action": {
+      "text": "drake",
+      "type": "type"
+    },
+    "pending_safety_checks": [],
+    "status": "completed",
+    "type": "computer_call"
+  },
+  "result": [
+    {
+      "type": "computer_call_output",
+      "call_id": "887c5270-1dd3-4c15-89e8-9bb6f122a6ba",
+      "acknowledged_safety_checks": [],
+      "output": {
+        "type": "input_image",
+        "image_url": "[omitted]"
+      }
+    }
+  ],
+  "created_at": "139924915136282350"
+}

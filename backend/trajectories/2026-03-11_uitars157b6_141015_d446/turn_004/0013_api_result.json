@@ -1,0 +1,64 @@
+{
+  "kwargs": {
+    "model": "mlx/mlx-community/UI-TARS-1.5-7B-6bit",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a helpful assistant."
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "You are a GUI agent. You are given a task and your action history, with screenshots. You need to perform the next action to complete the task. \n\n## Output Format\n```\nThought: ...\nAction: ...\n```\n\n## Action Space\n\nclick(start_box='<|box_start|>(x1,y1)<|box_end|>')\nleft_double(start_box='<|box_start|>(x1,y1)<|box_end|>')\nright_single(start_box='<|box_start|>(x1,y1)<|box_end|>')\ndrag(start_box='<|box_start|>(x1,y1)<|box_end|>', end_box='<|box_start|>(x3,y3)<|box_end|>')\nhotkey(key='')\ntype(content='') #If you want to submit your input, use \"\\n\" at the end of `content`.\nscroll(start_box='<|box_start|>(x1,y1)<|box_end|>', direction='down or up or right or left')\nwait() #Sleep for 5s and take a screenshot to check for any changes.\nfinished(content='xxx') # Use escape characters \\', \\\", and \\n in content part to ensure we can parse the content in normal python string format.\n\n\n## Note\n- Use English in `Thought` part.\n- Write a small plan and finally summarize your next action (with its target element) in one sentence in `Thought` part.\n\n## User Instruction\nYou are controlling a macOS desktop. CRITICAL RULES:\n- To open apps: hotkey(key='command space'), then type(content='AppName'). Enter will be pressed automatically after typing.\n- Do NOT press enter yourself after typing in Spotlight. It is handled automatically.\n- Do NOT look for taskbar/dock icons. Use Spotlight only.\n- After typing an app name, wait() for the app to load.\n- When searching in apps like Spotify, YouTube, or browsers, use your knowledge to understand what the user means. For example, 'bohemian rhapsody' is a song by Queen, 'Taylor Swift' is an artist, 'Dark Side of the Moon' is an album. After searching, click the correct category (Songs, Artists, Albums) if available, then click the correct result.\n\n\nTask: spotify is already open and in the foreground. Do NOT open spotify again. Do NOT use Spotlight. To search in spotify, click the search icon or search bar inside the spotify window first, then type your query. Do NOT type into any other field. Task: play a drake song\n"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Thought: The search bar is ready, and I'm about to type in the name of the artist I'm looking for. I'm going to enter \"drake\" here, which will allow me to find all of his songs. The search bar is right in front of me, and I can start typing right away.\nAction: type(content='drake')"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "image_url",
+            "image_url": "[omitted]"
+          }
+        ]
+      }
+    ],
+    "max_tokens": 500,
+    "temperature": 0.0,
+    "do_sample": false,
+    "num_retries": 3
+  },
+  "result": {
+    "id": "chatcmpl-1fcee914-40d9-4f94-866a-ad001c538431",
+    "created": 1773198690,
+    "model": "mlx-community/UI-TARS-1.5-7B-6bit",
+    "object": "chat.completion",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "Thought: I noticed that the search bar is still empty, which suggests that my previous input didn't go through successfully. Let me try again by typing \"drake\" into the search bar. This way, I can find all of his songs and start playing them.\nAction: type(content='drake')",
+          "role": "assistant"
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 20,
+      "prompt_tokens": 10,
+      "total_tokens": 30
+    }
+  },
+  "created_at": "139924914908434220"
+}
