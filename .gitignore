@@ -30,6 +30,9 @@ Thumbs.db
 # Claude Code
 .claude/
 
+# Trajectories (agent audit trail — screenshots + action logs)
+backend/trajectories/
+
 # Logs
 *.log
 

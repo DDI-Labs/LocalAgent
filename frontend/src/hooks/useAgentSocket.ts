@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef } from "react";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 
 export interface LogEntry {
@@ -8,13 +8,22 @@ export interface LogEntry {
   msg: string;
 }
 
+export interface ScreenshotData {
+  /** data:image/... URL */
+  image: string;
+  /** Click coordinates (in screenshot space) if the action was a click */
+  click?: { x: number; y: number };
+  /** Timestamp for display */
+  timestamp: string;
+}
+
 const WS_URL = "ws://localhost:8000/ws";
-const API_BASE = "http://localhost:8000";
 
 export function useAgentSocket() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [currentTask, setCurrentTask] = useState("Idle");
   const [isAgentBusy, setIsAgentBusy] = useState(false);
+  const [latestScreenshot, setLatestScreenshot] = useState<ScreenshotData | null>(null);
   const logIdRef = useRef(0);
 
   const { sendMessage, readyState } = useWebSocket(WS_URL, {
@@ -28,6 +37,15 @@ export function useAgentSocket() {
           msg: data.msg ?? JSON.stringify(data),
         };
         setLogs((prev) => [...prev, entry]);
+
+        // Update screenshot viewer when a screenshot is included
+        if (data.screenshot) {
+          setLatestScreenshot({
+            image: data.screenshot,
+            click: data.click ?? undefined,
+            timestamp: entry.timestamp,
+          });
+        }
 
         if (data.status === "done") {
           setCurrentTask("Idle");
@@ -70,6 +88,7 @@ export function useAgentSocket() {
     sendMessage(JSON.stringify({ type: "reset" }));
     setCurrentTask("Idle");
     setIsAgentBusy(false);
+    setLatestScreenshot(null);
   }, [sendMessage]);
 
   const clearLogs = useCallback(() => setLogs([]), []);
@@ -79,6 +98,7 @@ export function useAgentSocket() {
     currentTask,
     isConnected,
     isAgentBusy,
+    latestScreenshot,
     sendPrompt,
     resetHistory,
     clearLogs,

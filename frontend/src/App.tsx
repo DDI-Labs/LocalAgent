@@ -2,6 +2,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { StatCards } from "@/components/StatCards";
 import { ChatInput } from "@/components/ChatInput";
 import { ProcessMonitor } from "@/components/ProcessMonitor";
+import { ScreenshotViewer } from "@/components/ScreenshotViewer";
 import { useAgentSocket } from "@/hooks/useAgentSocket";
 
 function App() {
@@ -10,6 +11,7 @@ function App() {
     currentTask,
     isConnected,
     isAgentBusy,
+    latestScreenshot,
     sendPrompt,
     resetHistory,
     clearLogs,
@@ -30,6 +32,9 @@ function App() {
             onSend={sendPrompt}
             onReset={resetHistory}
           />
+
+          {/* Live screenshot view — shows what the agent sees + click targets */}
+          <ScreenshotViewer data={latestScreenshot} />
 
           {/* Process monitor — agent reasoning + actions */}
           <ProcessMonitor logs={logs} onClear={clearLogs} />

@@ -17,9 +17,13 @@ class ConnectionManager:
     def disconnect(self, websocket: WebSocket):
         self.active_connections.remove(websocket)
 
-    async def broadcast(self, status: str, msg: str):
-        """Send a status update to all connected clients."""
-        payload = json.dumps({"status": status, "msg": msg})
+    async def broadcast(self, status: str, msg: str, **extra):
+        """Send a status update to all connected clients.
+
+        Optional extra fields (e.g. screenshot, click) are merged into the
+        JSON payload so the frontend can display richer data.
+        """
+        payload = json.dumps({"status": status, "msg": msg, **extra})
         stale = []
         for connection in self.active_connections:
             try:

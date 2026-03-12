@@ -93,9 +93,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     )
                     continue
 
-                def make_broadcast(status: str, msg: str):
+                def make_broadcast(status: str, msg: str, **extra):
                     asyncio.ensure_future(
-                        manager.broadcast(status, msg)
+                        manager.broadcast(status, msg, **extra)
                     )
 
                 asyncio.ensure_future(

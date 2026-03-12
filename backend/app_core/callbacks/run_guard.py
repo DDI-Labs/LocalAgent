@@ -19,7 +19,9 @@ from agent.callbacks.base import AsyncCallbackHandler
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_CONSECUTIVE_WAITS = 3
-DEFAULT_TIMEOUT_SECONDS = 120  # 2 minutes per run
+# With the composed pipeline, each step involves two model calls (planning +
+# grounding) taking ~30-40s each.  5 minutes allows ~8-10 steps before timeout.
+DEFAULT_TIMEOUT_SECONDS = 300
 
 
 class RunGuardCallback(AsyncCallbackHandler):

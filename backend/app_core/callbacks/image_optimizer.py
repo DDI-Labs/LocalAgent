@@ -16,11 +16,16 @@ from agent.callbacks.base import AsyncCallbackHandler
 logger = logging.getLogger(__name__)
 
 # Target max dimension (width or height) for screenshots sent to the LLM.
-# 1280px is plenty for the model to see UI elements — no need for full Retina.
-TARGET_MAX_DIMENSION = 1024
+# 1536px preserves enough detail for the grounding model to accurately identify
+# small UI elements (sidebar items, input fields, icons).  The old value of
+# 1024 caused the grounding model to misidentify click targets in complex UIs
+# like Slack because fine text and small icons were lost in the downscale.
+TARGET_MAX_DIMENSION = 1536
 
-# JPEG quality (0-100). 60 is a good balance of quality vs size.
-JPEG_QUALITY = 60
+# JPEG quality (0-100).  75 keeps text legible for the grounding model while
+# still cutting payload size significantly (~60-70% reduction from Retina PNG).
+# The old value of 60 made small text too blurry for accurate coordinate mapping.
+JPEG_QUALITY = 75
 
 
 def _is_already_optimized(base64_data: str) -> bool:

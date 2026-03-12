@@ -6,3 +6,4 @@ cua-computer>=0.5.14
 cua-agent[all]>=0.7.0
 cua-computer-server>=0.1.0
 httpx>=0.27.0
+spacy>=3.7.0
