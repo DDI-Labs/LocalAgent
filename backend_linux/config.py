@@ -2,7 +2,7 @@ import os
 
 # Ollama
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5vl:7b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5vl:3b")
 
 # Agent behaviour
 AGENT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "30"))
