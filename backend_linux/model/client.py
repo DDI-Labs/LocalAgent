@@ -19,15 +19,18 @@ def chat(
     messages: list[dict],
     model: str = OLLAMA_MODEL,
     on_token: Optional[Callable[[str], None]] = None,
+    _retries: int = 1,
 ) -> str:
     """Send a chat request to Ollama and return the assistant's response text.
 
     Uses streaming to provide real-time token output and timing diagnostics.
+    Retries once on server errors (500) which can happen from transient OOM.
 
     Args:
         messages: Ollama chat format messages.
         model: Model name.
         on_token: Optional callback fired for each token chunk as it arrives.
+        _retries: Number of retries remaining on server errors.
     """
     payload = {
         "model": model,
@@ -47,12 +50,26 @@ def chat(
 
     try:
         with _client.stream("POST", f"{OLLAMA_HOST}/api/chat", json=payload) as resp:
-            resp.raise_for_status()
+            if resp.status_code >= 500:
+                resp.read()
+                error_msg = f"Ollama server error: {resp.status_code} {resp.text[:200]}"
+                if _retries > 0:
+                    log.warning("%s — retrying (%d left)", error_msg, _retries)
+                    time.sleep(2)
+                    return chat(messages, model, on_token, _retries - 1)
+                raise RuntimeError(error_msg)
+            if resp.status_code != 200:
+                resp.read()
+                raise RuntimeError(
+                    f"Ollama request failed: {resp.status_code} {resp.text[:200]}"
+                )
             chunks = []
             for line in resp.iter_lines():
                 if not line:
                     continue
                 data = json.loads(line)
+                if "error" in data:
+                    raise RuntimeError(f"Ollama error: {data['error']}")
                 token = data.get("message", {}).get("content", "")
                 if token:
                     if t_first_token is None:
@@ -69,8 +86,6 @@ def chat(
             f"Cannot connect to Ollama at {OLLAMA_HOST}. "
             "Is Ollama running? Start it with: ollama serve"
         )
-    except httpx.HTTPStatusError as e:
-        raise RuntimeError(f"Ollama request failed: {e.response.status_code} {e.response.text}")
 
     content = "".join(chunks)
     t_end = time.monotonic()

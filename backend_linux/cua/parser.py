@@ -131,27 +131,37 @@ def parse(
         return Action(type="done", thought=thought)
 
     # --- Try UI-TARS patterns ---
+    # Wrapped in try/except so unknown coord formats fall through to generic patterns.
 
     # click
     m = _ACTION_PATTERNS["click"].search(action_str)
     if m:
-        nx, ny = _extract_box_coords(m.group(1))
-        x, y = _normalized_to_absolute(nx, ny, screen_width, screen_height)
-        return Action(type="click", x=x, y=y, thought=thought)
+        try:
+            nx, ny = _extract_box_coords(m.group(1))
+            x, y = _normalized_to_absolute(nx, ny, screen_width, screen_height)
+            return Action(type="click", x=x, y=y, thought=thought)
+        except ValueError:
+            log.debug("UI-TARS click coords failed, falling through: %s", m.group(1))
 
     # double click
     m = _ACTION_PATTERNS["left_double"].search(action_str)
     if m:
-        nx, ny = _extract_box_coords(m.group(1))
-        x, y = _normalized_to_absolute(nx, ny, screen_width, screen_height)
-        return Action(type="double_click", x=x, y=y, thought=thought)
+        try:
+            nx, ny = _extract_box_coords(m.group(1))
+            x, y = _normalized_to_absolute(nx, ny, screen_width, screen_height)
+            return Action(type="double_click", x=x, y=y, thought=thought)
+        except ValueError:
+            log.debug("UI-TARS double_click coords failed, falling through: %s", m.group(1))
 
     # right click
     m = _ACTION_PATTERNS["right_single"].search(action_str)
     if m:
-        nx, ny = _extract_box_coords(m.group(1))
-        x, y = _normalized_to_absolute(nx, ny, screen_width, screen_height)
-        return Action(type="right_click", x=x, y=y, thought=thought)
+        try:
+            nx, ny = _extract_box_coords(m.group(1))
+            x, y = _normalized_to_absolute(nx, ny, screen_width, screen_height)
+            return Action(type="right_click", x=x, y=y, thought=thought)
+        except ValueError:
+            log.debug("UI-TARS right_click coords failed, falling through: %s", m.group(1))
 
     # type
     m = _ACTION_PATTERNS["type"].search(action_str)
@@ -166,18 +176,24 @@ def parse(
     # scroll
     m = _ACTION_PATTERNS["scroll"].search(action_str)
     if m:
-        nx, ny = _extract_box_coords(m.group(1))
-        x, y = _normalized_to_absolute(nx, ny, screen_width, screen_height)
-        return Action(type="scroll", x=x, y=y, direction=m.group(2), thought=thought)
+        try:
+            nx, ny = _extract_box_coords(m.group(1))
+            x, y = _normalized_to_absolute(nx, ny, screen_width, screen_height)
+            return Action(type="scroll", x=x, y=y, direction=m.group(2), thought=thought)
+        except ValueError:
+            log.debug("UI-TARS scroll coords failed, falling through: %s", m.group(1))
 
     # drag
     m = _ACTION_PATTERNS["drag"].search(action_str)
     if m:
-        nx1, ny1 = _extract_box_coords(m.group(1))
-        nx2, ny2 = _extract_box_coords(m.group(2))
-        x1, y1 = _normalized_to_absolute(nx1, ny1, screen_width, screen_height)
-        x2, y2 = _normalized_to_absolute(nx2, ny2, screen_width, screen_height)
-        return Action(type="drag", x=x1, y=y1, x2=x2, y2=y2, thought=thought)
+        try:
+            nx1, ny1 = _extract_box_coords(m.group(1))
+            nx2, ny2 = _extract_box_coords(m.group(2))
+            x1, y1 = _normalized_to_absolute(nx1, ny1, screen_width, screen_height)
+            x2, y2 = _normalized_to_absolute(nx2, ny2, screen_width, screen_height)
+            return Action(type="drag", x=x1, y=y1, x2=x2, y2=y2, thought=thought)
+        except ValueError:
+            log.debug("UI-TARS drag coords failed, falling through: %s", m.group(0))
 
     # wait
     m = _ACTION_PATTERNS["wait"].search(action_str)

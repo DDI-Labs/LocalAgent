@@ -189,7 +189,11 @@ class AgentLoop:
             })
 
             # 3. Parse action
-            action = parser.parse(response, screen_w, screen_h)
+            try:
+                action = parser.parse(response, screen_w, screen_h)
+            except Exception as e:
+                log.warning("Failed to parse model output: %s — treating as wait", e)
+                action = parser.Action(type="wait", thought=f"Parse error: {e}")
 
             # Save annotated debug screenshot
             self._save_debug_screenshot(step, action, response)
