@@ -37,6 +37,7 @@ def chat(
         "options": {
             "temperature": 0.3,
             "num_predict": 512,
+            "num_ctx": 2048,
         },
     }
 
