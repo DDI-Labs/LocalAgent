@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from agent.loop import AgentLoop
 from model.client import check_model_available
 from config import HOST, PORT, OLLAMA_MODEL, DEBUG_DIR
-from sites import get_site, list_sites
+from sites import get_site, list_sites, DEFAULT_SITE_ID
 
 logging.basicConfig(
     level=logging.INFO,
@@ -85,13 +85,11 @@ async def run_task(body: dict):
             return {"error": "Agent is already running a task."}
 
     task_details = body.get("details", body)
-    site = None
-    site_id = body.get("site") or task_details.get("site")
-    if site_id:
-        try:
-            site = get_site(site_id)
-        except KeyError as e:
-            return {"error": str(e)}
+    site_id = body.get("site") or task_details.get("site") or DEFAULT_SITE_ID
+    try:
+        site = get_site(site_id)
+    except KeyError as e:
+        return {"error": str(e)}
 
     def on_status(status: str, msg: str):
         log.info("[%s] %s", status, msg)
@@ -130,14 +128,12 @@ async def websocket_endpoint(ws: WebSocket):
             if data.get("type") == "prompt":
                 task_details = data.get("details", {})
 
-                site = None
-                site_id = data.get("site") or task_details.get("site")
-                if site_id:
-                    try:
-                        site = get_site(site_id)
-                    except KeyError as e:
-                        await send_status("error", str(e))
-                        continue
+                site_id = data.get("site") or task_details.get("site") or DEFAULT_SITE_ID
+                try:
+                    site = get_site(site_id)
+                except KeyError as e:
+                    await send_status("error", str(e))
+                    continue
 
                 with _agent_lock:
                     if _agent and not _agent._stopped:
@@ -218,13 +214,13 @@ if __name__ == "__main__":
                 "My licence plate is XYZ-5678. Can you patch me through?"
             ),
         }
-        site = None
+        site_id = DEFAULT_SITE_ID
         if "--site" in sys.argv:
             idx = sys.argv.index("--site")
-            site_id = sys.argv[idx + 1] if idx + 1 < len(sys.argv) else None
-            if site_id:
-                site = get_site(site_id)
-                print(f"Site: {site['name']} ({site['app']})")
+            if idx + 1 < len(sys.argv):
+                site_id = sys.argv[idx + 1]
+        site = get_site(site_id)
+        print(f"Site: {site['name']} ({site['app']})")
         run_cli(mock_task, site=site)
     else:
         log.info("Starting LocalAgent Linux backend on %s:%d", HOST, PORT)

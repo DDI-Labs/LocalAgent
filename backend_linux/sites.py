@@ -1,5 +1,7 @@
 """Site definitions — each site the agent can connect to."""
 
+DEFAULT_SITE_ID = "tower-a"
+
 SITES: dict[str, dict] = {
     "tower-a": {
         "name": "Tower A",
