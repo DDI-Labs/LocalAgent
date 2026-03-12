@@ -9,10 +9,8 @@ Provides:
 import asyncio
 import json
 import logging
-import subprocess
 import sys
 import threading
-import time
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -21,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from agent.loop import AgentLoop
 from model.client import check_model_available
 from config import HOST, PORT, OLLAMA_MODEL, DEBUG_DIR
+from sites import get_site, list_sites
 
 logging.basicConfig(
     level=logging.INFO,
@@ -55,15 +54,28 @@ async def health():
     }
 
 
+@app.get("/sites")
+async def sites():
+    """Return all configured sites (credentials redacted)."""
+    safe = []
+    for s in list_sites():
+        entry = {k: v for k, v in s.items() if k not in ("password",)}
+        safe.append(entry)
+    return safe
+
+
 @app.post("/run")
-async def run_task(task_details: dict):
+async def run_task(body: dict):
     """Submit a task via REST (for testing without the frontend).
 
     Body example:
     {
-        "building": "Tower A",
-        "license_plate": "ABC-1234",
-        "reason": "lost parking ticket"
+        "site": "tower-a",
+        "details": {
+            "building": "Tower A",
+            "license_plate": "ABC-1234",
+            "reason": "lost parking ticket"
+        }
     }
     """
     global _agent
@@ -72,10 +84,19 @@ async def run_task(task_details: dict):
         if _agent and not _agent._stopped:
             return {"error": "Agent is already running a task."}
 
+    task_details = body.get("details", body)
+    site = None
+    site_id = body.get("site") or task_details.get("site")
+    if site_id:
+        try:
+            site = get_site(site_id)
+        except KeyError as e:
+            return {"error": str(e)}
+
     def on_status(status: str, msg: str):
         log.info("[%s] %s", status, msg)
 
-    _agent = AgentLoop(task_details, on_status=on_status)
+    _agent = AgentLoop(task_details, on_status=on_status, site=site)
     result = _agent.run()
     _agent = None
     return result
@@ -109,6 +130,15 @@ async def websocket_endpoint(ws: WebSocket):
             if data.get("type") == "prompt":
                 task_details = data.get("details", {})
 
+                site = None
+                site_id = data.get("site") or task_details.get("site")
+                if site_id:
+                    try:
+                        site = get_site(site_id)
+                    except KeyError as e:
+                        await send_status("error", str(e))
+                        continue
+
                 with _agent_lock:
                     if _agent and not _agent._stopped:
                         await send_status("error", "Agent is already running.")
@@ -119,7 +149,7 @@ async def websocket_endpoint(ws: WebSocket):
                 def on_status_sync(status: str, msg: str):
                     asyncio.run_coroutine_threadsafe(send_status(status, msg), loop)
 
-                _agent = AgentLoop(task_details, on_status=on_status_sync)
+                _agent = AgentLoop(task_details, on_status=on_status_sync, site=site)
 
                 def run_agent():
                     global _agent
@@ -146,12 +176,14 @@ async def websocket_endpoint(ws: WebSocket):
 
 # --- CLI mode ---
 
-def run_cli(task_details: dict):
+def run_cli(task_details: dict, site: dict | None = None):
     """Run a task directly from the command line (no server)."""
     print(f"\n--- LocalAgent CLI ---")
     print(f"Model: {OLLAMA_MODEL}")
     print(f"Task: {json.dumps(task_details, indent=2)}")
-    print(f"\n📸 Debug screenshots: {DEBUG_DIR}/")
+    if site:
+        print(f"Site: {site['name']} (via {site['app']})")
+    print(f"\nDebug screenshots: {DEBUG_DIR}/")
     print(f"   Watch live: eog {DEBUG_DIR}/latest.png")
     print(f"   Or browse:  nautilus {DEBUG_DIR}/\n")
 
@@ -160,18 +192,11 @@ def run_cli(task_details: dict):
         print(f"Pull it with: ollama pull {OLLAMA_MODEL}")
         sys.exit(1)
 
-    # Bootstrap: ensure NoMachine is running before the agent starts.
-    # This avoids relying on the model to find and launch the app from scratch.
-    print("  🚀 Launching NoMachine...")
-    subprocess.Popen(["nxplayer"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(3)  # Give it time to open
-    print("  ✅ NoMachine launched (or was already running)\n")
-
     def on_status(status: str, msg: str):
         prefix = {"thinking": "🤔", "action": "⚡", "done": "✅", "error": "❌"}.get(status, "•")
         print(f"  {prefix} [{status}] {msg}")
 
-    agent = AgentLoop(task_details, on_status=on_status)
+    agent = AgentLoop(task_details, on_status=on_status, site=site)
     result = agent.run()
 
     print(f"\n--- Result ---")
@@ -182,7 +207,7 @@ def run_cli(task_details: dict):
 if __name__ == "__main__":
     if "--cli" in sys.argv:
         # Example: python main.py --cli
-        # Quick test with mock extracted details
+        #          python main.py --cli --site google-test
         mock_task = {
             "building": "Tower A",
             "license_plate": "XYZ-5678",
@@ -193,7 +218,14 @@ if __name__ == "__main__":
                 "My licence plate is XYZ-5678. Can you patch me through?"
             ),
         }
-        run_cli(mock_task)
+        site = None
+        if "--site" in sys.argv:
+            idx = sys.argv.index("--site")
+            site_id = sys.argv[idx + 1] if idx + 1 < len(sys.argv) else None
+            if site_id:
+                site = get_site(site_id)
+                print(f"Site: {site['name']} ({site['app']})")
+        run_cli(mock_task, site=site)
     else:
         log.info("Starting LocalAgent Linux backend on %s:%d", HOST, PORT)
         uvicorn.run(app, host=HOST, port=PORT)

@@ -23,14 +23,17 @@ class AgentLoop:
         self,
         task_details: dict,
         on_status: Optional[Callable[[str, str], None]] = None,
+        site: Optional[dict] = None,
     ):
         """
         Args:
             task_details: Extracted voice note details dict.
             on_status: Optional callback(status, message) for real-time updates.
                        status is one of: 'thinking', 'action', 'done', 'error'.
+            site: Optional site dict (from sites.py) with app, credentials, etc.
         """
         self.task_details = task_details
+        self.site = site
         self.on_status = on_status or (lambda s, m: None)
         self.messages: list[dict] = []
         self.step_count = 0
@@ -105,7 +108,7 @@ class AgentLoop:
         self.on_status(status, msg)
 
     def _build_initial_messages(self) -> list[dict]:
-        task_prompt = build_task_prompt(self.task_details)
+        task_prompt = build_task_prompt(self.task_details, site=self.site)
         return [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": task_prompt},
