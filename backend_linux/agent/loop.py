@@ -147,8 +147,15 @@ class AgentLoop:
                 "images": [img_b64],
             })
 
+            # Strip images from all but the latest user message to avoid OOM
+            messages_to_send = []
+            for i, msg in enumerate(self.messages):
+                if "images" in msg and i < len(self.messages) - 1:
+                    msg = {k: v for k, v in msg.items() if k != "images"}
+                messages_to_send.append(msg)
+
             try:
-                response = client.chat(self.messages)
+                response = client.chat(messages_to_send)
             except RuntimeError as e:
                 self._emit("error", str(e))
                 return {"outcome": "error", "reason": str(e), "steps": step}
