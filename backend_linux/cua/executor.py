@@ -65,6 +65,8 @@ def hotkey(keys: str) -> None:
     """
     log.info("hotkey(%s)", keys)
     _run(["xdotool", "key", "--clearmodifiers", keys])
+    # Give the UI time to respond (launchers, menus, dialogs take ~0.5s to open)
+    time.sleep(0.6)
 
 
 def scroll(x: int, y: int, direction: str, clicks: int = 3) -> None:
