@@ -79,8 +79,8 @@ def capture(output_path: str = SCREENSHOT_PATH) -> str:
 
 
 def capture_and_encode(
-    max_dimension: int = 768,
-    jpeg_quality: int = 50,
+    max_dimension: int = 1280,
+    jpeg_quality: int = 75,
 ) -> str:
     """Take a screenshot of the primary monitor, compress it, and return base64.
 

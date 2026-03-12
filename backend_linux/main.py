@@ -9,8 +9,10 @@ Provides:
 import asyncio
 import json
 import logging
+import subprocess
 import sys
 import threading
+import time
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -157,6 +159,13 @@ def run_cli(task_details: dict):
         print(f"ERROR: Model '{OLLAMA_MODEL}' not found in Ollama.")
         print(f"Pull it with: ollama pull {OLLAMA_MODEL}")
         sys.exit(1)
+
+    # Bootstrap: ensure NoMachine is running before the agent starts.
+    # This avoids relying on the model to find and launch the app from scratch.
+    print("  🚀 Launching NoMachine...")
+    subprocess.Popen(["nxplayer"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(3)  # Give it time to open
+    print("  ✅ NoMachine launched (or was already running)\n")
 
     def on_status(status: str, msg: str):
         prefix = {"thinking": "🤔", "action": "⚡", "done": "✅", "error": "❌"}.get(status, "•")
