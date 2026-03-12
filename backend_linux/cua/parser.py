@@ -66,14 +66,28 @@ _GENERIC_TYPE = re.compile(r"type\s*\(\s*['\"]([^'\"]*)['\"]|content\s*=\s*['\"]
 _GENERIC_HOTKEY = re.compile(r"(?:hotkey|key|press)\s*\(\s*['\"]([^'\"]*)['\"]")
 
 
-_BRACKET_BOX = re.compile(r"\[(\d+),\s*(\d+)\]")
+_BRACKET_BOX_4 = re.compile(r"\[(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\]")
+_BRACKET_BOX_2 = re.compile(r"\[(\d+),\s*(\d+)\]")
+
 
 def _extract_box_coords(box_str: str) -> tuple[int, int]:
-    """Extract (x, y) from a UI-TARS box string or bracket format [x,y]."""
+    """Extract (x, y) from a UI-TARS box string or bracket format.
+
+    Supports:
+      <|box_start|>(x,y)<|box_end|>   → (x, y)
+      [x, y]                          → (x, y)
+      [x1, y1, x2, y2]               → center of bounding box
+    """
     m = _BOX_PATTERN.search(box_str)
     if m:
         return int(m.group(1)), int(m.group(2))
-    m = _BRACKET_BOX.search(box_str)
+    # 4-value bounding box [x1,y1,x2,y2] → center point
+    m = _BRACKET_BOX_4.search(box_str)
+    if m:
+        x1, y1, x2, y2 = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+        return (x1 + x2) // 2, (y1 + y2) // 2
+    # 2-value point [x,y]
+    m = _BRACKET_BOX_2.search(box_str)
     if m:
         return int(m.group(1)), int(m.group(2))
     raise ValueError(f"Cannot parse box coordinates from: {box_str}")
