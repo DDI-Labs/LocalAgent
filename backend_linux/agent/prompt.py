@@ -17,7 +17,7 @@ AVAILABLE ACTIONS:
 - right_single(start_box='<|box_start|>(x,y)<|box_end|>') — right click
 - type(content='text here') — type text into the currently focused field. Does NOT press Enter.
 - hotkey(key='Return') — press the Enter key
-- hotkey(key='ctrl+a') — press a key combination (e.g. select all)
+- hotkey(key='super+d') — press a key combination (e.g. minimize all windows)
 - hotkey(key='super') — open the GNOME Activities launcher
 - scroll(start_box='<|box_start|>(x,y)<|box_end|>', direction='down') — scroll up or down
 - drag(start_box='<|box_start|>(x1,y1)<|box_end|>', end_box='<|box_start|>(x2,y2)<|box_end|>') — drag
@@ -76,7 +76,7 @@ AVAILABLE ACTIONS (use exactly this syntax):
 - right_click(x=<number>, y=<number>) — right click
 - type("text here") — type text into the currently focused field. Does NOT press Enter.
 - hotkey("Return") — press the Enter key
-- hotkey("ctrl+a") — press a key combination (e.g. select all)
+- hotkey("super+d") — press a key combination (e.g. minimize all windows)
 - hotkey("super") — open the GNOME Activities launcher
 - scroll(x=<number>, y=<number>, direction="down") — scroll up or down
 - wait() — pause and observe (use sparingly)
