@@ -38,6 +38,7 @@ class AgentLoop:
         self.messages: list[dict] = []
         self.step_count = 0
         self.consecutive_waits = 0
+        self._last_action_sig: str = ""
         self._last_action_summary: str = ""
         self._consecutive_same_actions: int = 0
         self._stopped = False
@@ -229,7 +230,7 @@ class AgentLoop:
             else:
                 self.consecutive_waits = 0
 
-            if action_sig == self._last_action_summary:
+            if action_sig == self._last_action_sig:
                 self._consecutive_same_actions += 1
                 if self._consecutive_same_actions >= 5:
                     self._emit("error", f"Agent stuck repeating same action: {action_sig}")
@@ -240,7 +241,7 @@ class AgentLoop:
                     }
             else:
                 self._consecutive_same_actions = 0
-                self._last_action_summary = action_sig
+            self._last_action_sig = action_sig
 
             # 6. Execute all actions from this response
             executed_summaries = []
