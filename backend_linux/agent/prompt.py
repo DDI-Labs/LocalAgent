@@ -159,11 +159,11 @@ STEP-BY-STEP PLAN to connect with TeamViewer:
     },
 
     "google": {
-        "app_name": "Firefox",
+        "app_name": "Google Chrome",
         "steps": """\
 STEP-BY-STEP PLAN to open the website:
-1. Open Firefox: press super key, type "Firefox", press Enter
-2. Wait for Firefox to load
+1. Open Google Chrome: press super key, type "Google Chrome", press Enter
+2. Wait for Google Chrome to load
 3. Click the address bar at the top of the browser
 4. Type the URL: {url}
 5. Press Enter to navigate
