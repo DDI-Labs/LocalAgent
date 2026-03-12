@@ -8,7 +8,7 @@ from io import BytesIO
 
 from PIL import Image
 
-from config import SCREENSHOT_PATH
+from config import SCREENSHOT_PATH, SCREENSHOT_MAX_DIM
 
 log = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ def capture(output_path: str = SCREENSHOT_PATH) -> str:
 
 
 def capture_and_encode(
-    max_dimension: int = 1280,
+    max_dimension: int = SCREENSHOT_MAX_DIM,
     jpeg_quality: int = 75,
 ) -> str:
     """Take a screenshot of the primary monitor, compress it, and return base64.

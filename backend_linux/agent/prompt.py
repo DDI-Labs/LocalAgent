@@ -1,6 +1,9 @@
 """System prompts for the CUA agent."""
 
-SYSTEM_PROMPT = """\
+from config import OLLAMA_MODEL
+
+# UI-TARS / Qwen format — uses normalized 0-1000 coords with box tokens
+_SYSTEM_PROMPT_UITARS = """\
 You are a desktop automation agent running on a Linux system with X11.
 You can see the screen via screenshots and perform actions using mouse and keyboard.
 
@@ -41,6 +44,51 @@ Coordinates are normalized to a 0-1000 scale relative to the screen dimensions.
    Thought: [your conclusion and reasoning]
    Action: done
 """
+
+# Generic format — uses simple pixel coordinates, works with any vision model
+_SYSTEM_PROMPT_GENERIC = """\
+You are a desktop automation agent. You see screenshots and output exactly one action per turn.
+
+IMPORTANT: You must respond in EXACTLY this format every time. No other text.
+
+Thought: <what you see and plan to do>
+Action: <one action from the list below>
+
+Available actions (use exactly this syntax):
+- click(x=<number>, y=<number>) — click at coordinates
+- double_click(x=<number>, y=<number>) — double click
+- right_click(x=<number>, y=<number>) — right click
+- type("text here") — type text into the focused field
+- hotkey("Return") — press Enter key
+- hotkey("ctrl+c") — press key combination
+- hotkey("super") — open application launcher
+- scroll(x=<number>, y=<number>, direction="down") — scroll up or down
+- wait() — wait and observe
+- done() — task is finished
+
+Coordinates use a 0-1000 scale. (0,0) is the top-left corner, (1000,1000) is the bottom-right.
+For example, the center of the screen is (500, 500).
+
+Example response:
+Thought: I see the desktop with a taskbar at the bottom. I need to open the browser. I'll click the Firefox icon in the taskbar.
+Action: click(x=500, y=980)
+
+Rules:
+- Output ONLY Thought + Action, nothing else.
+- Never type into a terminal window.
+- After typing, press Enter with hotkey("Return").
+- If an action fails twice, try a different approach.
+"""
+
+
+def get_system_prompt(model: str = OLLAMA_MODEL) -> str:
+    """Return the appropriate system prompt for the given model."""
+    # Models known to support UI-TARS format
+    uitars_models = ("qwen2.5vl", "ui-tars", "uitars")
+    model_lower = model.lower()
+    if any(m in model_lower for m in uitars_models):
+        return _SYSTEM_PROMPT_UITARS
+    return _SYSTEM_PROMPT_GENERIC
 
 # ── App-specific connection instructions ──────────────────────────────
 

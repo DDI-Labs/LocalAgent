@@ -60,8 +60,18 @@ _ACTION_PATTERNS = {
 # --- Generic patterns (works with Qwen and flexible outputs) ---
 
 _GENERIC_CLICK = re.compile(
-    r"click\s*\(\s*(?:x\s*=\s*)?(\d+)\s*,\s*(?:y\s*=\s*)?(\d+)\s*\)"
+    r"(?<!double_)(?<!right_)click\s*\(\s*(?:x\s*=\s*)?(\d+)\s*,\s*(?:y\s*=\s*)?(\d+)\s*\)"
 )
+_GENERIC_DOUBLE_CLICK = re.compile(
+    r"double_click\s*\(\s*(?:x\s*=\s*)?(\d+)\s*,\s*(?:y\s*=\s*)?(\d+)\s*\)"
+)
+_GENERIC_RIGHT_CLICK = re.compile(
+    r"right_click\s*\(\s*(?:x\s*=\s*)?(\d+)\s*,\s*(?:y\s*=\s*)?(\d+)\s*\)"
+)
+_GENERIC_SCROLL = re.compile(
+    r"scroll\s*\(\s*(?:x\s*=\s*)?(\d+)\s*,\s*(?:y\s*=\s*)?(\d+)\s*,\s*(?:direction\s*=\s*)?['\"](\w+)['\"]"
+)
+_GENERIC_DONE = re.compile(r"\bdone\s*\(\s*\)")
 _GENERIC_TYPE = re.compile(r"type\s*\(\s*['\"]([^'\"]*)['\"]|content\s*=\s*['\"]([^'\"]*)['\"]")
 _GENERIC_HOTKEY = re.compile(r"(?:hotkey|key|press)\s*\(\s*['\"]([^'\"]*)['\"]")
 
@@ -202,6 +212,11 @@ def parse(
 
     # --- Try generic patterns ---
 
+    # done()
+    m = _GENERIC_DONE.search(action_str)
+    if m:
+        return Action(type="done", thought=thought)
+
     m = _GENERIC_CLICK.search(action_str)
     if m:
         nx, ny = int(m.group(1)), int(m.group(2))
@@ -210,6 +225,30 @@ def parse(
             return Action(type="click", x=nx, y=ny, thought=thought)
         x, y = _normalized_to_absolute(nx, ny, screen_width, screen_height)
         return Action(type="click", x=x, y=y, thought=thought)
+
+    m = _GENERIC_DOUBLE_CLICK.search(action_str)
+    if m:
+        nx, ny = int(m.group(1)), int(m.group(2))
+        if nx > 1000 or ny > 1000:
+            return Action(type="double_click", x=nx, y=ny, thought=thought)
+        x, y = _normalized_to_absolute(nx, ny, screen_width, screen_height)
+        return Action(type="double_click", x=x, y=y, thought=thought)
+
+    m = _GENERIC_RIGHT_CLICK.search(action_str)
+    if m:
+        nx, ny = int(m.group(1)), int(m.group(2))
+        if nx > 1000 or ny > 1000:
+            return Action(type="right_click", x=nx, y=ny, thought=thought)
+        x, y = _normalized_to_absolute(nx, ny, screen_width, screen_height)
+        return Action(type="right_click", x=x, y=y, thought=thought)
+
+    m = _GENERIC_SCROLL.search(action_str)
+    if m:
+        nx, ny = int(m.group(1)), int(m.group(2))
+        if nx > 1000 or ny > 1000:
+            return Action(type="scroll", x=nx, y=ny, direction=m.group(3), thought=thought)
+        x, y = _normalized_to_absolute(nx, ny, screen_width, screen_height)
+        return Action(type="scroll", x=x, y=y, direction=m.group(3), thought=thought)
 
     m = _GENERIC_TYPE.search(action_str)
     if m:

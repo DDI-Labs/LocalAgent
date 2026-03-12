@@ -10,8 +10,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 from cua import screenshot, executor, parser
 from model import client
-from agent.prompt import SYSTEM_PROMPT, build_task_prompt
-from config import AGENT_MAX_STEPS, AGENT_MAX_CONSECUTIVE_WAITS, DEBUG_DIR, SCREENSHOT_PATH
+from agent.prompt import get_system_prompt, build_task_prompt
+from config import AGENT_MAX_STEPS, AGENT_MAX_CONSECUTIVE_WAITS, DEBUG_DIR, SCREENSHOT_PATH, OLLAMA_MODEL
 
 log = logging.getLogger(__name__)
 
@@ -110,7 +110,7 @@ class AgentLoop:
     def _build_initial_messages(self) -> list[dict]:
         task_prompt = build_task_prompt(self.task_details, site=self.site)
         return [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": get_system_prompt(OLLAMA_MODEL)},
             {"role": "user", "content": task_prompt},
         ]
 
