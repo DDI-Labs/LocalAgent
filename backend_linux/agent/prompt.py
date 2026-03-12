@@ -97,7 +97,7 @@ _APP_INSTRUCTIONS = {
 ## Connecting with NoMachine
 
 1. Open NoMachine (nxplayer):
-   - Look for a NoMachine icon on the desktop (double-click to launch)
+   - Look for a NoMachine icon on the desktop or taskbar (double-click to launch)
    - Or press hotkey(key='super'), type "NoMachine", press Enter
 2. In the NoMachine connection list, find and double-click the host: **{host}**
    - If no saved connection exists, click "Add" and enter host **{host}**
@@ -122,7 +122,7 @@ _APP_INSTRUCTIONS = {
 
 1. Open a web browser:
    - Look for a Firefox or Chrome icon on the desktop or taskbar
-   - Or press hotkey(key='super'), type "Firefox" (or "Chrome"), press Enter
+   - Or press hotkey(key='super'), type "Firefox" (or "Google Chrome"), press Enter
 2. In the address bar, navigate to: **{url}**
 3. You should see the Google search page.""",
 }
@@ -142,7 +142,7 @@ def _build_launch_hint(site: dict) -> str:
     app_names = {
         "nomachine": "NoMachine",
         "teamviewer": "TeamViewer",
-        "google": "Firefox",
+        "google": "Google Chrome",
     }
     app_label = app_names.get(site["app"], site["app"])
     return (
@@ -184,6 +184,7 @@ def build_task_prompt(task_details: dict, site: dict | None = None) -> str:
     if task_details.get("raw_transcript"):
         parts.append(f"- Full transcript: \"{task_details['raw_transcript']}\"")
 
+# This whole parts prompt should improve massively. TODO: rewrite to be more concise and actionable, with clearer instructions.
     parts.append(
         "\n## Objective\n"
         "1. Open the application and connect to the site as described above.\n"

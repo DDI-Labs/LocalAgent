@@ -33,7 +33,7 @@ SITES: dict[str, dict] = {
     },
     "google-test": {
         "name": "Google Test",
-        "app": "google",
+        "app": "google-chrome",
         "url": "https://www.google.com",
         "description": "Google search — for testing agent navigation only",
     },

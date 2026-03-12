@@ -146,9 +146,15 @@ class AgentLoop:
             # 2. Send to model
             self._emit("thinking", f"Step {step}/{AGENT_MAX_STEPS}: Asking model...")
 
+            # Include what was done last so the model doesn't repeat
+            if self._last_action_summary:
+                prompt = f"I executed: {self._last_action_summary}. Here is the updated screenshot. What is the single next action?"
+            else:
+                prompt = "Here is the current screenshot. What is the single next action?"
+
             self.messages.append({
                 "role": "user",
-                "content": "Here is the current screenshot. What action should I take next?",
+                "content": prompt,
                 "images": [img_b64],
             })
 
@@ -188,28 +194,30 @@ class AgentLoop:
                 "content": response,
             })
 
-            # 3. Parse action
+            # 3. Parse actions (supports multi-action responses)
             try:
-                action = parser.parse(response, screen_w, screen_h)
+                actions = parser.parse_all(response, screen_w, screen_h)
             except Exception as e:
                 log.warning("Failed to parse model output: %s — treating as wait", e)
-                action = parser.Action(type="wait", thought=f"Parse error: {e}")
+                actions = [parser.Action(type="wait", thought=f"Parse error: {e}")]
 
-            # Save annotated debug screenshot
-            self._save_debug_screenshot(step, action, response)
+            first_action = actions[0]
 
-            if action.thought:
-                self._emit("thinking", action.thought)
+            # Save annotated debug screenshot (first action)
+            self._save_debug_screenshot(step, first_action, response)
+
+            if first_action.thought:
+                self._emit("thinking", first_action.thought)
 
             # 4. Check for completion
-            if action.type == "done":
-                outcome, reason = self._extract_decision(action.thought or response)
+            if first_action.type == "done":
+                outcome, reason = self._extract_decision(first_action.thought or response)
                 self._emit("done", f"Decision: {outcome.upper()} — {reason}")
                 return {"outcome": outcome, "reason": reason, "steps": step}
 
             # 5. Check wait loop and repeated-action loop
-            action_sig = f"{action.type}:{action.x},{action.y},{action.text}"
-            if action.type == "wait":
+            action_sig = f"{first_action.type}:{first_action.x},{first_action.y},{first_action.text}"
+            if first_action.type == "wait":
                 self.consecutive_waits += 1
                 if self.consecutive_waits >= AGENT_MAX_CONSECUTIVE_WAITS:
                     self._emit("error", "Agent stuck in wait loop, stopping.")
@@ -234,13 +242,20 @@ class AgentLoop:
                 self._consecutive_same_actions = 0
                 self._last_action_summary = action_sig
 
-            # 6. Execute action
-            self._emit("action", f"Step {step}: {action.type}({self._action_summary(action)})")
-            try:
-                self._execute(action)
-            except Exception as e:
-                self._emit("error", f"Action execution failed: {e}")
-                return {"outcome": "error", "reason": str(e), "steps": step}
+            # 6. Execute all actions from this response
+            executed_summaries = []
+            for i, action in enumerate(actions):
+                label = f"Step {step}" if len(actions) == 1 else f"Step {step}.{i+1}"
+                self._emit("action", f"{label}: {action.type}({self._action_summary(action)})")
+                try:
+                    self._execute(action)
+                    executed_summaries.append(f"{action.type}({self._action_summary(action)})")
+                except Exception as e:
+                    self._emit("error", f"Action execution failed: {e}")
+                    return {"outcome": "error", "reason": str(e), "steps": step}
+
+            # Update action summary for context in next prompt
+            self._last_action_summary = ", ".join(executed_summaries)
 
         self._emit("error", f"Reached max steps ({AGENT_MAX_STEPS}).")
         return {"outcome": "max_steps", "reason": "Max steps reached.", "steps": AGENT_MAX_STEPS}
