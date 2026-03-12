@@ -167,8 +167,17 @@ class AgentLoop:
                     msg = {k: v for k, v in msg.items() if k != "images"}
                 messages_to_send.append(msg)
 
+            _token_buf = []
+
+            def _on_token(tok: str) -> None:
+                _token_buf.append(tok)
+                # Emit streaming preview every ~10 tokens
+                if len(_token_buf) % 10 == 0:
+                    partial = "".join(_token_buf)
+                    self._emit("thinking", f"Step {step}: ...{partial[-80:]}")
+
             try:
-                response = client.chat(messages_to_send)
+                response = client.chat(messages_to_send, on_token=_on_token)
             except RuntimeError as e:
                 self._emit("error", str(e))
                 return {"outcome": "error", "reason": str(e), "steps": step}
