@@ -35,6 +35,8 @@ class AgentLoop:
         self.messages: list[dict] = []
         self.step_count = 0
         self.consecutive_waits = 0
+        self._last_action_summary: str = ""
+        self._consecutive_same_actions: int = 0
         self._stopped = False
         self._debug_dir = Path(DEBUG_DIR)
         self._setup_debug_dir()
@@ -147,10 +149,18 @@ class AgentLoop:
                 "images": [img_b64],
             })
 
-            # Strip images from all but the latest user message to avoid OOM
+            # Build trimmed message list: system prompt + last 10 exchanges + latest screenshot
+            # This prevents context blowup and degenerate repeated outputs.
+            system_msgs = [m for m in self.messages if m["role"] == "system"]
+            non_system = [m for m in self.messages if m["role"] != "system"]
+            # Keep at most 20 non-system messages (10 user+assistant pairs), always including the last
+            trimmed = non_system[-20:] if len(non_system) > 20 else non_system
+            candidate = system_msgs + trimmed
+
+            # Strip images from all but the latest user message
             messages_to_send = []
-            for i, msg in enumerate(self.messages):
-                if "images" in msg and i < len(self.messages) - 1:
+            for i, msg in enumerate(candidate):
+                if "images" in msg and i < len(candidate) - 1:
                     msg = {k: v for k, v in msg.items() if k != "images"}
                 messages_to_send.append(msg)
 
@@ -181,7 +191,8 @@ class AgentLoop:
                 self._emit("done", f"Decision: {outcome.upper()} — {reason}")
                 return {"outcome": outcome, "reason": reason, "steps": step}
 
-            # 5. Check wait loop
+            # 5. Check wait loop and repeated-action loop
+            action_sig = f"{action.type}:{action.x},{action.y},{action.text}"
             if action.type == "wait":
                 self.consecutive_waits += 1
                 if self.consecutive_waits >= AGENT_MAX_CONSECUTIVE_WAITS:
@@ -193,6 +204,19 @@ class AgentLoop:
                     }
             else:
                 self.consecutive_waits = 0
+
+            if action_sig == self._last_action_summary:
+                self._consecutive_same_actions += 1
+                if self._consecutive_same_actions >= 5:
+                    self._emit("error", f"Agent stuck repeating same action: {action_sig}")
+                    return {
+                        "outcome": "error",
+                        "reason": f"Stuck repeating: {action_sig}",
+                        "steps": step,
+                    }
+            else:
+                self._consecutive_same_actions = 0
+                self._last_action_summary = action_sig
 
             # 6. Execute action
             self._emit("action", f"Step {step}: {action.type}({self._action_summary(action)})")

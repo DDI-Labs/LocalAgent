@@ -34,7 +34,7 @@ def chat(
         "messages": messages,
         "stream": False,
         "options": {
-            "temperature": 0.1,
+            "temperature": 0.3,
             "num_predict": 512,
         },
     }
