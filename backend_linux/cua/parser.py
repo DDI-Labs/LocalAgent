@@ -66,9 +66,14 @@ _GENERIC_TYPE = re.compile(r"type\s*\(\s*['\"]([^'\"]*)['\"]|content\s*=\s*['\"]
 _GENERIC_HOTKEY = re.compile(r"(?:hotkey|key|press)\s*\(\s*['\"]([^'\"]*)['\"]")
 
 
+_BRACKET_BOX = re.compile(r"\[(\d+),\s*(\d+)\]")
+
 def _extract_box_coords(box_str: str) -> tuple[int, int]:
-    """Extract (x, y) from a UI-TARS box string."""
+    """Extract (x, y) from a UI-TARS box string or bracket format [x,y]."""
     m = _BOX_PATTERN.search(box_str)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    m = _BRACKET_BOX.search(box_str)
     if m:
         return int(m.group(1)), int(m.group(2))
     raise ValueError(f"Cannot parse box coordinates from: {box_str}")
