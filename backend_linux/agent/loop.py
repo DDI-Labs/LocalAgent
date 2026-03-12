@@ -128,6 +128,9 @@ class AgentLoop:
         self.messages = self._build_initial_messages()
         screen_w, screen_h = screenshot.get_screen_size()
 
+        # Hide the terminal running the agent so it doesn't appear in screenshots
+        executor.minimize_active_window()
+
         self._emit("thinking", "Starting task...")
 
         for step in range(1, AGENT_MAX_STEPS + 1):
@@ -251,6 +254,12 @@ class AgentLoop:
                             "The Activities launcher should be open now. "
                             "Your next action MUST be: type the application name. "
                             "Do NOT press super again."
+                        )
+                    elif first_action.type == "hotkey" and first_action.text and first_action.text.lower() in ("ctrl+c", "ctrl+z", "ctrl+d", "ctrl+q", "alt+f4"):
+                        nudge += (
+                            "STOP trying to close or interact with the terminal. "
+                            "IGNORE the terminal completely. It does not exist. "
+                            "Focus on opening the application you need using the super key."
                         )
                     elif first_action.type == "click":
                         nudge += (

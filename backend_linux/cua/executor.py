@@ -25,6 +25,20 @@ def _run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True, capture_output=True)
 
 
+def minimize_active_window() -> None:
+    """Minimize the currently focused window (the terminal running the agent).
+
+    Call this before the agent loop starts so the terminal doesn't appear
+    in screenshots and distract the model.
+    """
+    try:
+        _run(["xdotool", "getactivewindow", "windowminimize"])
+        log.info("Minimized active window (agent terminal)")
+        time.sleep(0.5)
+    except Exception as e:
+        log.warning("Could not minimize active window: %s", e)
+
+
 def click(x: int, y: int) -> None:
     """Move mouse to (x, y) on primary monitor and left-click."""
     ax, ay = _offset(x, y)
@@ -58,11 +72,21 @@ def type_text(text: str, delay_ms: int = 50) -> None:
     _run(["xdotool", "type", "--clearmodifiers", "--delay", str(delay_ms), text])
 
 
-def hotkey(keys: str) -> None:
-    """Press a key combination, e.g. 'ctrl+c', 'alt+F4', 'Return'.
+_BLOCKED_HOTKEYS = frozenset({
+    "ctrl+c", "ctrl+z", "ctrl+d", "ctrl+\\",
+    "ctrl+q",  # would quit the terminal emulator
+    "alt+f4",  # would close the terminal window
+})
 
-    Translates common key names to xdotool equivalents.
+
+def hotkey(keys: str) -> None:
+    """Press a key combination, e.g. 'ctrl+a', 'alt+Tab', 'Return'.
+
+    Blocks key combos that would kill the agent process or close its terminal.
     """
+    if keys.lower() in _BLOCKED_HOTKEYS:
+        log.warning("BLOCKED dangerous hotkey: %s (would kill agent)", keys)
+        return
     log.info("hotkey(%s)", keys)
     _run(["xdotool", "key", "--clearmodifiers", keys])
     # Give the UI time to respond — launchers/Activities need longer

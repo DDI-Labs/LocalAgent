@@ -17,7 +17,7 @@ AVAILABLE ACTIONS:
 - right_single(start_box='<|box_start|>(x,y)<|box_end|>') — right click
 - type(content='text here') — type text into the currently focused field. Does NOT press Enter.
 - hotkey(key='Return') — press the Enter key
-- hotkey(key='ctrl+c') — press a key combination
+- hotkey(key='ctrl+a') — press a key combination (e.g. select all)
 - hotkey(key='super') — open the GNOME Activities launcher
 - scroll(start_box='<|box_start|>(x,y)<|box_end|>', direction='down') — scroll up or down
 - drag(start_box='<|box_start|>(x1,y1)<|box_end|>', end_box='<|box_start|>(x2,y2)<|box_end|>') — drag
@@ -28,7 +28,7 @@ Coordinates are normalized to 0-1000 scale (0,0 = top-left, 1000,1000 = bottom-r
 
 CRITICAL RULES:
 1. Output exactly ONE action per turn. No extra text.
-2. NEVER type into a terminal window.
+2. COMPLETELY IGNORE any terminal windows. Do NOT close them, do NOT type into them, do NOT interact with them in any way. Pretend they do not exist.
 3. After typing text, you MUST press Enter: hotkey(key='Return')
 4. If the same action has no effect twice, try something completely different.
 
@@ -76,7 +76,7 @@ AVAILABLE ACTIONS (use exactly this syntax):
 - right_click(x=<number>, y=<number>) — right click
 - type("text here") — type text into the currently focused field. Does NOT press Enter.
 - hotkey("Return") — press the Enter key
-- hotkey("ctrl+c") — press a key combination
+- hotkey("ctrl+a") — press a key combination (e.g. select all)
 - hotkey("super") — open the GNOME Activities launcher
 - scroll(x=<number>, y=<number>, direction="down") — scroll up or down
 - wait() — pause and observe (use sparingly)
@@ -86,7 +86,7 @@ Coordinates use 0-1000 scale. (0,0) = top-left, (1000,1000) = bottom-right. Cent
 
 CRITICAL RULES:
 1. Output exactly ONE action per turn. No extra text.
-2. NEVER type into a terminal window.
+2. COMPLETELY IGNORE any terminal windows. Do NOT close them, do NOT type into them, do NOT interact with them in any way. Pretend they do not exist.
 3. After typing text, you MUST press Enter: hotkey("Return")
 4. If the same action has no effect twice, try something completely different.
 
@@ -112,7 +112,7 @@ EXAMPLE — Opening Google Chrome:
 Thought: I see the desktop. I need to open Google Chrome. I will press Super to open the launcher.
 Action: hotkey("super")
 
-Thought: The Activities launcher is open with a search bar. I will type Firefox to search for it.
+Thought: The Activities launcher is open with a search bar. I will type Google Chrome to search for it.
 Action: type("Google Chrome")
 
 Thought: I typed Google Chrome in the search bar. I need to press Enter to launch it.
