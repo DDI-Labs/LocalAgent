@@ -232,13 +232,40 @@ class AgentLoop:
 
             if action_sig == self._last_action_sig:
                 self._consecutive_same_actions += 1
-                if self._consecutive_same_actions >= 5:
+                if self._consecutive_same_actions >= 4:
                     self._emit("error", f"Agent stuck repeating same action: {action_sig}")
                     return {
                         "outcome": "error",
                         "reason": f"Stuck repeating: {action_sig}",
                         "steps": step,
                     }
+                if self._consecutive_same_actions >= 2:
+                    # Nudge the model with corrective guidance based on what it's stuck doing
+                    nudge = (
+                        f"STOP. Your action '{first_action.type}({self._action_summary(first_action)})' "
+                        f"was repeated {self._consecutive_same_actions} times with no effect. "
+                        "You MUST do something different.\n"
+                    )
+                    if first_action.type == "hotkey" and first_action.text and "super" in first_action.text.lower():
+                        nudge += (
+                            "The Activities launcher should be open now. "
+                            "Your next action MUST be: type the application name. "
+                            "Do NOT press super again."
+                        )
+                    elif first_action.type == "click":
+                        nudge += (
+                            "Clicking this position is not working. "
+                            "Try a different position, or try using keyboard instead."
+                        )
+                    elif first_action.type == "type":
+                        nudge += (
+                            "Typing is not working. Make sure the right field is focused. "
+                            "Try clicking the text field first, then type."
+                        )
+                    else:
+                        nudge += "Try a completely different action or approach."
+                    self.messages.append({"role": "user", "content": nudge})
+                    self._emit("thinking", f"Nudging model: repeated {self._consecutive_same_actions}x")
             else:
                 self._consecutive_same_actions = 0
             self._last_action_sig = action_sig
