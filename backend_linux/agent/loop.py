@@ -162,12 +162,12 @@ class AgentLoop:
                 "images": [img_b64],
             })
 
-            # Build trimmed message list: system prompt + last 10 exchanges + latest screenshot
+            # Build trimmed message list: system prompt + recent exchanges + latest screenshot
             # This prevents context blowup and degenerate repeated outputs.
             system_msgs = [m for m in self.messages if m["role"] == "system"]
             non_system = [m for m in self.messages if m["role"] != "system"]
-            # Keep at most 20 non-system messages (10 user+assistant pairs), always including the last
-            trimmed = non_system[-20:] if len(non_system) > 20 else non_system
+            # Keep at most 10 non-system messages (5 user+assistant pairs)
+            trimmed = non_system[-10:] if len(non_system) > 10 else non_system
             candidate = system_msgs + trimmed
 
             # Strip images from all but the latest user message
@@ -189,8 +189,25 @@ class AgentLoop:
             try:
                 response = client.chat(messages_to_send, on_token=_on_token)
             except RuntimeError as e:
-                self._emit("error", str(e))
-                return {"outcome": "error", "reason": str(e), "steps": step}
+                if "GGML_ASSERT" in str(e):
+                    # Context too large — aggressively trim and retry once
+                    log.warning("GGML crash, retrying with minimal context")
+                    self._emit("thinking", "Context too large, trimming and retrying...")
+                    minimal = system_msgs + non_system[-4:]
+                    messages_to_send = []
+                    for i, msg in enumerate(minimal):
+                        if "images" in msg and i < len(minimal) - 1:
+                            msg = {k: v for k, v in msg.items() if k != "images"}
+                        messages_to_send.append(msg)
+                    try:
+                        _token_buf.clear()
+                        response = client.chat(messages_to_send, on_token=_on_token)
+                    except RuntimeError as e2:
+                        self._emit("error", str(e2))
+                        return {"outcome": "error", "reason": str(e2), "steps": step}
+                else:
+                    self._emit("error", str(e))
+                    return {"outcome": "error", "reason": str(e), "steps": step}
 
             # Add assistant response to conversation history
             self.messages.append({

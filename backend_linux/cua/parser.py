@@ -34,6 +34,10 @@ class Action:
 _BOX_PATTERN = re.compile(
     r"<\|box_start\|>\((\d+),\s*(\d+)\)<\|box_end\|>"
 )
+# Two-point bounding box: <|box_start|>(x1,y1),(x2,y2)<|box_end|>
+_BOX_PATTERN_2PT = re.compile(
+    r"<\|box_start\|>\((\d+),\s*(\d+)\),\s*\((\d+),\s*(\d+)\)<\|box_end\|>"
+)
 
 _ACTION_PATTERNS = {
     "click": re.compile(r"click\(start_box='([^']+)'\)"),
@@ -82,10 +86,16 @@ def _extract_box_coords(box_str: str) -> tuple[int, int]:
     """Extract (x, y) from a UI-TARS box string or bracket format.
 
     Supports:
-      <|box_start|>(x,y)<|box_end|>   -> (x, y)
-      [x, y]                          -> (x, y)
-      [x1, y1, x2, y2]               -> center of bounding box
+      <|box_start|>(x1,y1),(x2,y2)<|box_end|> -> center of bounding box
+      <|box_start|>(x,y)<|box_end|>            -> (x, y)
+      [x1, y1, x2, y2]                        -> center of bounding box
+      [x, y]                                   -> (x, y)
     """
+    # Two-point bounding box (must check before single-point)
+    m = _BOX_PATTERN_2PT.search(box_str)
+    if m:
+        x1, y1, x2, y2 = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+        return (x1 + x2) // 2, (y1 + y2) // 2
     m = _BOX_PATTERN.search(box_str)
     if m:
         return int(m.group(1)), int(m.group(2))
