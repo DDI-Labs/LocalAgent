@@ -26,17 +26,17 @@ def _run(cmd: list[str]) -> None:
 
 
 def minimize_active_window() -> None:
-    """Minimize the currently focused window (the terminal running the agent).
+    """Minimize ALL windows to give the agent a clean desktop.
 
-    Call this before the agent loop starts so the terminal doesn't appear
-    in screenshots and distract the model.
+    Uses Super+D (show desktop) to ensure no windows — including the terminal
+    running the agent — appear in screenshots and distract the model.
     """
     try:
-        _run(["xdotool", "getactivewindow", "windowminimize"])
-        log.info("Minimized active window (agent terminal)")
-        time.sleep(0.5)
+        _run(["xdotool", "key", "super+d"])
+        log.info("Minimized all windows (Super+D — clean desktop)")
+        time.sleep(1.5)  # GNOME animation
     except Exception as e:
-        log.warning("Could not minimize active window: %s", e)
+        log.warning("Could not minimize windows: %s", e)
 
 
 def click(x: int, y: int) -> None:

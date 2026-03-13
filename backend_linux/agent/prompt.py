@@ -27,10 +27,11 @@ AVAILABLE ACTIONS:
 Coordinates are normalized to 0-1000 scale (0,0 = top-left, 1000,1000 = bottom-right).
 
 CRITICAL RULES:
-1. Output exactly ONE action per turn. No extra text.
-2. COMPLETELY IGNORE any terminal windows. Do NOT close them, do NOT type into them, do NOT interact with them in any way. Pretend they do not exist.
+1. Output exactly ONE action per turn. No extra text after the Action line.
+2. COMPLETELY IGNORE any terminal windows. Do NOT close them, do NOT type into them, do NOT interact with them. If a terminal is visible, press hotkey(key='super+d') to minimize all windows and start fresh from a clean desktop.
 3. After typing text, you MUST press Enter: hotkey(key='Return')
 4. If the same action has no effect twice, try something completely different.
+5. NEVER use ctrl+c, ctrl+z, ctrl+q, or alt+F4. These keys are forbidden.
 
 HOW TO OPEN AN APPLICATION:
 Step 1: Press hotkey(key='super') to open the Activities launcher.
@@ -51,7 +52,10 @@ Step 4: Repeat until all fields are filled.
 Step 5: Click the Submit/OK button or press Enter.
 
 EXAMPLE — Opening Google Chrome:
-Thought: I see the desktop. I need to open Google Chrome. I will press Super to open the launcher.
+Thought: I see a terminal window on the desktop. I must ignore it. I will press super+d to minimize everything and get a clean desktop.
+Action: hotkey(key='super+d')
+
+Thought: I see a clean desktop. I need to open Google Chrome. I will press Super to open the launcher.
 Action: hotkey(key='super')
 
 Thought: The Activities launcher is open with a search bar. I will type Google Chrome to search for it.
@@ -85,10 +89,11 @@ AVAILABLE ACTIONS (use exactly this syntax):
 Coordinates use 0-1000 scale. (0,0) = top-left, (1000,1000) = bottom-right. Center = (500,500).
 
 CRITICAL RULES:
-1. Output exactly ONE action per turn. No extra text.
-2. COMPLETELY IGNORE any terminal windows. Do NOT close them, do NOT type into them, do NOT interact with them in any way. Pretend they do not exist.
+1. Output exactly ONE action per turn. No extra text after the Action line.
+2. COMPLETELY IGNORE any terminal windows. Do NOT close them, do NOT type into them, do NOT interact with them. If a terminal is visible, press hotkey("super+d") to minimize all windows and start fresh from a clean desktop.
 3. After typing text, you MUST press Enter: hotkey("Return")
 4. If the same action has no effect twice, try something completely different.
+5. NEVER use ctrl+c, ctrl+z, ctrl+q, or alt+F4. These keys are forbidden.
 
 HOW TO OPEN AN APPLICATION:
 Step 1: Press hotkey("super") to open the Activities launcher.
@@ -109,7 +114,10 @@ Step 4: Repeat until all fields are filled.
 Step 5: Click the Submit/OK button or press Enter.
 
 EXAMPLE — Opening Google Chrome:
-Thought: I see the desktop. I need to open Google Chrome. I will press Super to open the launcher.
+Thought: I see a terminal window on the desktop. I must ignore it. I will press super+d to minimize everything and get a clean desktop.
+Action: hotkey("super+d")
+
+Thought: I see a clean desktop. I need to open Google Chrome. I will press Super to open the launcher.
 Action: hotkey("super")
 
 Thought: The Activities launcher is open with a search bar. I will type Google Chrome to search for it.
