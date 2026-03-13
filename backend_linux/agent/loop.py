@@ -3,6 +3,7 @@
 import logging
 import os
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -44,6 +45,24 @@ class AgentLoop:
         self._stopped = False
         self._debug_dir = Path(DEBUG_DIR)
         self._setup_debug_dir()
+
+    @staticmethod
+    def _notify(outcome: str, reason: str, steps: int) -> None:
+        """Send a desktop notification with the agent result."""
+        icons = {"granted": "dialog-ok", "denied": "dialog-error",
+                 "error": "dialog-warning", "stopped": "dialog-information",
+                 "max_steps": "dialog-warning", "unknown": "dialog-question"}
+        icon = icons.get(outcome, "dialog-information")
+        urgency = "critical" if outcome in ("error", "denied") else "normal"
+        title = f"LocalAgent — {outcome.upper()}"
+        body = f"{reason}\n({steps} steps)"
+        try:
+            subprocess.Popen(
+                ["notify-send", "-u", urgency, "-i", icon, title, body],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except FileNotFoundError:
+            log.debug("notify-send not available")
 
     def _setup_debug_dir(self) -> None:
         """Create/clean the debug directory for step-by-step screenshots."""
@@ -125,6 +144,12 @@ class AgentLoop:
                 "steps": int,
             }
         """
+        result = self._run_loop()
+        self._notify(result["outcome"], result["reason"], result["steps"])
+        return result
+
+    def _run_loop(self) -> dict:
+        """Internal loop — run() wraps this to add notifications."""
         self.messages = self._build_initial_messages()
         screen_w, screen_h = screenshot.get_screen_size()
 
