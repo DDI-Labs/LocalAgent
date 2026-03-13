@@ -40,9 +40,10 @@ Step 3: Press Enter to launch it: hotkey(key='Return')
 IMPORTANT: After pressing super, you MUST type the app name next. Do NOT press super again.
 
 HOW TO NAVIGATE A BROWSER:
-Step 1: Click the address bar at the top of the browser window.
-Step 2: Type the URL: type(content='https://example.com')
-Step 3: Press Enter: hotkey(key='Return')
+Step 1: If there are popups or modals, press the esc key to close them: hotkey(key='Escape')
+Step 2: Click the address bar at the top of the browser window.
+Step 3: Type the URL: type(content='http://localhost:5555')
+Step 4: Press Enter: hotkey(key='Return')
 
 HOW TO FILL IN A FORM:
 Step 1: Click on the text field you want to fill.
@@ -172,14 +173,15 @@ STEP-BY-STEP PLAN to connect with TeamViewer:
 STEP-BY-STEP PLAN to verify a parking booking:
 1. Open Google Chrome: press super key, type "Google Chrome", press Enter
 2. Wait for Google Chrome to load
-3. Click the address bar at the top of the browser
-4. Type this exact URL: {url}/verify?plate={license_plate}
-5. Press Enter to navigate
-6. Read what is displayed on the page:
+3. If there are popups or modals, press the esc key to close them: hotkey(key='Escape')
+4. Click the address bar at the top of the browser or press Ctrl+L to focus it
+5. Type this exact URL: {url}/verify?plate={license_plate}
+6. Press Enter to navigate
+7. Read what is displayed on the page:
    - If the page shows a Parking Pass with driver name, building, bay, and status, that means a booking EXISTS. Check if the details match the task.
    - If the page says "No Booking Found", there is NO record for this plate.
    - If the pass status says EXPIRED or SUSPENDED, the booking is not valid.
-7. Based on what you see, decide GRANTED or DENIED.""",
+8. Based on what you see, decide GRANTED or DENIED.""",
     },
 }
 
