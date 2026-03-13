@@ -34,10 +34,10 @@ SITES: dict[str, dict] = {
         "description": "Mall West underground parking",
     },
     "google-test": {
-        "name": "Google Test",
-        "app": "google-chrome",
-        "url": "https://www.google.com",
-        "description": "Google search — for testing agent navigation only",
+        "name": "Parking Verification (Test)",
+        "app": "google",
+        "url": "http://127.0.0.1:5555",
+        "description": "Local mock server — agent opens browser, searches plate, reads result",
     },
 }
 

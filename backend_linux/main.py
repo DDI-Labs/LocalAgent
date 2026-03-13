@@ -20,12 +20,16 @@ from agent.loop import AgentLoop
 from model.client import check_model_available
 from config import HOST, PORT, OLLAMA_MODEL, DEBUG_DIR
 from sites import get_site, list_sites, DEFAULT_SITE_ID
+from testserver.server import start_test_server
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 log = logging.getLogger(__name__)
+
+# Start mock verification server for testing (daemon thread, dies with main process)
+start_test_server()
 
 app = FastAPI(title="LocalAgent Linux")
 

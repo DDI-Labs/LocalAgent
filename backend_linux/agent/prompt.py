@@ -169,18 +169,22 @@ STEP-BY-STEP PLAN to connect with TeamViewer:
     "google": {
         "app_name": "Google Chrome",
         "steps": """\
-STEP-BY-STEP PLAN to open the website:
+STEP-BY-STEP PLAN to verify a parking booking:
 1. Open Google Chrome: press super key, type "Google Chrome", press Enter
 2. Wait for Google Chrome to load
 3. Click the address bar at the top of the browser
-4. Type the URL: {url}
+4. Type this exact URL: {url}/verify?plate={license_plate}
 5. Press Enter to navigate
-6. You should now see the website""",
+6. Read what is displayed on the page:
+   - If the page shows a Parking Pass with driver name, building, bay, and status, that means a booking EXISTS. Check if the details match the task.
+   - If the page says "No Booking Found", there is NO record for this plate.
+   - If the pass status says EXPIRED or SUSPENDED, the booking is not valid.
+7. Based on what you see, decide GRANTED or DENIED.""",
     },
 }
 
 
-def _build_connection_instructions(site: dict) -> str:
+def _build_connection_instructions(site: dict, task_details: dict | None = None) -> str:
     """Return app-specific step-by-step instructions with credentials filled in."""
     app = site["app"]
     app_info = _APP_INSTRUCTIONS.get(app)
@@ -189,7 +193,11 @@ def _build_connection_instructions(site: dict) -> str:
             f"\nOPEN APPLICATION: press super key, type \"{app}\", press Enter.\n"
             f"Then use **{app}** to connect to this site.\n"
         )
-    steps = app_info["steps"].format(**{k: v for k, v in site.items() if k != "app"})
+    # Merge site config + task details for placeholder substitution
+    fmt_vars = {k: v for k, v in site.items() if k != "app"}
+    if task_details:
+        fmt_vars.update(task_details)
+    steps = app_info["steps"].format(**fmt_vars)
     return "\n" + steps + "\n"
 
 
@@ -211,7 +219,7 @@ def build_task_prompt(task_details: dict, site: dict | None = None, site_id: str
         if site.get("description"):
             parts.append(f"({site['description']})")
         parts.append("")
-        parts.append(_build_connection_instructions(site))
+        parts.append(_build_connection_instructions(site, task_details))
 
     # Include demonstration if one exists for this site
     if site_id:
