@@ -193,7 +193,7 @@ def _build_connection_instructions(site: dict) -> str:
     return "\n" + steps + "\n"
 
 
-def build_task_prompt(task_details: dict, site: dict | None = None) -> str:
+def build_task_prompt(task_details: dict, site: dict | None = None, site_id: str | None = None) -> str:
     """Build a task-specific prompt from extracted voice note details.
 
     Args:
@@ -201,6 +201,7 @@ def build_task_prompt(task_details: dict, site: dict | None = None) -> str:
                       'booking_bay', 'reason', 'raw_transcript', etc.
         site: Optional site dict from sites.py. When provided, connection
               instructions and credentials are included in the prompt.
+        site_id: Optional site ID string. Used to look up demonstrations.
     """
     parts = []
 
@@ -211,6 +212,21 @@ def build_task_prompt(task_details: dict, site: dict | None = None) -> str:
             parts.append(f"({site['description']})")
         parts.append("")
         parts.append(_build_connection_instructions(site))
+
+    # Include demonstration if one exists for this site
+    if site_id:
+        try:
+            from demonstrations.recorder import list_demos, load_demo, format_demo_for_prompt
+            demos = list_demos(site_id)
+            if demos:
+                steps = load_demo(demos[0])  # most recent demo
+                demo_text = format_demo_for_prompt(steps)
+                if demo_text:
+                    parts.append("")
+                    parts.append(demo_text)
+                    parts.append("")
+        except ImportError:
+            pass
 
     # Task details — concise, labeled
     parts.append("DETAILS TO VERIFY:")

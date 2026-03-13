@@ -24,27 +24,47 @@ class AgentLoop:
         self,
         task_details: dict,
         on_status: Optional[Callable[[str, str], None]] = None,
+        on_input: Optional[Callable[[str], Optional[str]]] = None,
         site: Optional[dict] = None,
+        site_id: Optional[str] = None,
     ):
         """
         Args:
             task_details: Extracted voice note details dict.
             on_status: Optional callback(status, message) for real-time updates.
                        status is one of: 'thinking', 'action', 'done', 'error'.
+            on_input: Optional callback(prompt) -> suggestion string.
+                      Called when the agent is stuck and needs a human hint.
+                      Return None or empty string to let the agent keep trying.
             site: Optional site dict (from sites.py) with app, credentials, etc.
+            site_id: Optional site ID for loading demonstrations.
         """
         self.task_details = task_details
         self.site = site
+        self.site_id = site_id
         self.on_status = on_status or (lambda s, m: None)
+        self.on_input = on_input
         self.messages: list[dict] = []
         self.step_count = 0
         self.consecutive_waits = 0
         self._last_action_sig: str = ""
         self._last_action_summary: str = ""
         self._consecutive_same_actions: int = 0
+        self._action_history: list[str] = []  # rolling last N action summaries
         self._stopped = False
         self._debug_dir = Path(DEBUG_DIR)
         self._setup_debug_dir()
+
+    @staticmethod
+    def _desktop_alert(title: str, body: str, urgency: str = "normal", icon: str = "dialog-information") -> None:
+        """Send a desktop notification via notify-send."""
+        try:
+            subprocess.Popen(
+                ["notify-send", "-u", urgency, "-i", icon, title, body],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except FileNotFoundError:
+            log.debug("notify-send not available")
 
     @staticmethod
     def _notify(outcome: str, reason: str, steps: int) -> None:
@@ -56,13 +76,7 @@ class AgentLoop:
         urgency = "critical" if outcome in ("error", "denied") else "normal"
         title = f"LocalAgent — {outcome.upper()}"
         body = f"{reason}\n({steps} steps)"
-        try:
-            subprocess.Popen(
-                ["notify-send", "-u", urgency, "-i", icon, title, body],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
-        except FileNotFoundError:
-            log.debug("notify-send not available")
+        AgentLoop._desktop_alert(title, body, urgency, icon)
 
     def _setup_debug_dir(self) -> None:
         """Create/clean the debug directory for step-by-step screenshots."""
@@ -128,7 +142,7 @@ class AgentLoop:
         self.on_status(status, msg)
 
     def _build_initial_messages(self) -> list[dict]:
-        task_prompt = build_task_prompt(self.task_details, site=self.site)
+        task_prompt = build_task_prompt(self.task_details, site=self.site, site_id=self.site_id)
         return [
             {"role": "system", "content": get_system_prompt(OLLAMA_MODEL)},
             {"role": "user", "content": task_prompt},
@@ -175,9 +189,10 @@ class AgentLoop:
             # 2. Send to model
             self._emit("thinking", f"Step {step}/{AGENT_MAX_STEPS}: Asking model...")
 
-            # Include what was done last so the model doesn't repeat
-            if self._last_action_summary:
-                prompt = f"I executed: {self._last_action_summary}. Here is the updated screenshot. What is the single next action?"
+            # Build prompt with rolling action history (last 5 actions)
+            if self._action_history:
+                history = " → ".join(self._action_history[-5:])
+                prompt = f"Actions so far: {history}\nHere is the current screenshot. What is the single next action?"
             else:
                 prompt = "Here is the current screenshot. What is the single next action?"
 
@@ -266,29 +281,65 @@ class AgentLoop:
             if first_action.type == "wait":
                 self.consecutive_waits += 1
                 if self.consecutive_waits >= AGENT_MAX_CONSECUTIVE_WAITS:
-                    self._emit("error", "Agent stuck in wait loop, stopping.")
-                    return {
-                        "outcome": "error",
-                        "reason": "Stuck in wait loop.",
-                        "steps": step,
-                    }
+                    if self.on_input:
+                        self._emit("thinking", "Agent stuck waiting — asking for human suggestion...")
+                        self._desktop_alert(
+                            "LocalAgent — NEEDS HELP",
+                            "Agent is stuck and needs your input.\nCheck your terminal.",
+                            urgency="critical", icon="dialog-question",
+                        )
+                        hint = self.on_input("Agent is stuck (can't parse actions). What should it do?")
+                        if hint and hint.strip():
+                            self.messages.append({
+                                "role": "user",
+                                "content": f"HUMAN SUGGESTION: {hint.strip()}\nFollow this suggestion for your next action.",
+                            })
+                            self.consecutive_waits = 0
+                            self._emit("thinking", f"Got suggestion: {hint.strip()[:80]}")
+                        else:
+                            self._emit("error", "Agent stuck in wait loop, stopping.")
+                            return {"outcome": "error", "reason": "Stuck in wait loop.", "steps": step}
+                    else:
+                        self._emit("error", "Agent stuck in wait loop, stopping.")
+                        return {"outcome": "error", "reason": "Stuck in wait loop.", "steps": step}
             else:
                 self.consecutive_waits = 0
 
             if action_sig == self._last_action_sig:
                 self._consecutive_same_actions += 1
-                if self._consecutive_same_actions >= 4:
+                n = self._consecutive_same_actions
+
+                if n >= 3 and self.on_input:
+                    # Ask human for help
+                    self._emit("thinking", f"Stuck {n}x — asking for human suggestion...")
+                    self._desktop_alert(
+                        "LocalAgent — NEEDS HELP",
+                        f"Agent stuck repeating: {first_action.type}({self._action_summary(first_action)})\nCheck your terminal.",
+                        urgency="critical", icon="dialog-question",
+                    )
+                    hint = self.on_input(
+                        f"Agent is stuck repeating: {first_action.type}({self._action_summary(first_action)}). "
+                        f"What should it do next? (empty to let it keep trying)"
+                    )
+                    if hint and hint.strip():
+                        self.messages.append({
+                            "role": "user",
+                            "content": f"HUMAN SUGGESTION: {hint.strip()}\nFollow this suggestion for your next action.",
+                        })
+                        self._consecutive_same_actions = 0  # reset after human help
+                        self._emit("thinking", f"Got suggestion: {hint.strip()[:80]}")
+                    elif n >= 5:
+                        self._emit("error", f"Agent stuck repeating: {action_sig}")
+                        return {"outcome": "error", "reason": f"Stuck repeating: {action_sig}", "steps": step}
+                elif n >= 4 and not self.on_input:
                     self._emit("error", f"Agent stuck repeating same action: {action_sig}")
-                    return {
-                        "outcome": "error",
-                        "reason": f"Stuck repeating: {action_sig}",
-                        "steps": step,
-                    }
-                if self._consecutive_same_actions >= 2:
-                    # Nudge the model with corrective guidance based on what it's stuck doing
+                    return {"outcome": "error", "reason": f"Stuck repeating: {action_sig}", "steps": step}
+
+                if n >= 2 and n < 4:
+                    # Auto-nudge with context-aware hint
                     nudge = (
                         f"STOP. Your action '{first_action.type}({self._action_summary(first_action)})' "
-                        f"was repeated {self._consecutive_same_actions} times with no effect. "
+                        f"was repeated {n} times with no effect. "
                         "You MUST do something different.\n"
                     )
                     if first_action.type == "hotkey" and first_action.text and "super" in first_action.text.lower():
@@ -300,23 +351,17 @@ class AgentLoop:
                     elif first_action.type == "hotkey" and first_action.text and first_action.text.lower() in ("ctrl+c", "ctrl+z", "ctrl+d", "ctrl+q", "alt+f4"):
                         nudge += (
                             "STOP trying to close or interact with the terminal. "
-                            "IGNORE the terminal completely. It does not exist. "
+                            "IGNORE the terminal completely. "
                             "Focus on opening the application you need using the super key."
                         )
                     elif first_action.type == "click":
-                        nudge += (
-                            "Clicking this position is not working. "
-                            "Try a different position, or try using keyboard instead."
-                        )
+                        nudge += "Clicking this position is not working. Try a different position or use keyboard."
                     elif first_action.type == "type":
-                        nudge += (
-                            "Typing is not working. Make sure the right field is focused. "
-                            "Try clicking the text field first, then type."
-                        )
+                        nudge += "Typing is not working. Click the text field first, then type."
                     else:
                         nudge += "Try a completely different action or approach."
                     self.messages.append({"role": "user", "content": nudge})
-                    self._emit("thinking", f"Nudging model: repeated {self._consecutive_same_actions}x")
+                    self._emit("thinking", f"Nudging model: repeated {n}x")
             else:
                 self._consecutive_same_actions = 0
             self._last_action_sig = action_sig
@@ -333,8 +378,9 @@ class AgentLoop:
                     self._emit("error", f"Action execution failed: {e}")
                     return {"outcome": "error", "reason": str(e), "steps": step}
 
-            # Update action summary for context in next prompt
+            # Update action history for context in next prompt
             self._last_action_summary = ", ".join(executed_summaries)
+            self._action_history.extend(executed_summaries)
 
         self._emit("error", f"Reached max steps ({AGENT_MAX_STEPS}).")
         return {"outcome": "max_steps", "reason": "Max steps reached.", "steps": AGENT_MAX_STEPS}

@@ -94,7 +94,7 @@ async def run_task(body: dict):
     def on_status(status: str, msg: str):
         log.info("[%s] %s", status, msg)
 
-    _agent = AgentLoop(task_details, on_status=on_status, site=site)
+    _agent = AgentLoop(task_details, on_status=on_status, site=site, site_id=site_id)
     result = _agent.run()
     _agent = None
     return result
@@ -107,6 +107,10 @@ async def websocket_endpoint(ws: WebSocket):
     global _agent
     await ws.accept()
     log.info("WebSocket client connected")
+
+    # Shared state for human-in-the-loop input
+    _input_event = threading.Event()
+    _input_response: dict = {"value": ""}
 
     async def send_status(status: str, msg: str):
         try:
@@ -123,6 +127,12 @@ async def websocket_endpoint(ws: WebSocket):
                     _agent.stop()
                     _agent = None
                 await send_status("done", "Agent reset.")
+                continue
+
+            if data.get("type") == "suggestion":
+                # Human responded to an input request
+                _input_response["value"] = data.get("text", "")
+                _input_event.set()
                 continue
 
             if data.get("type") == "prompt":
@@ -145,7 +155,20 @@ async def websocket_endpoint(ws: WebSocket):
                 def on_status_sync(status: str, msg: str):
                     asyncio.run_coroutine_threadsafe(send_status(status, msg), loop)
 
-                _agent = AgentLoop(task_details, on_status=on_status_sync, site=site)
+                def on_input_sync(prompt: str) -> str:
+                    """Block agent thread until human sends a suggestion via WebSocket."""
+                    _input_event.clear()
+                    _input_response["value"] = ""
+                    asyncio.run_coroutine_threadsafe(
+                        send_status("need_input", prompt), loop
+                    )
+                    _input_event.wait(timeout=300)  # 5 min timeout
+                    return _input_response["value"]
+
+                _agent = AgentLoop(
+                    task_details, on_status=on_status_sync,
+                    on_input=on_input_sync, site=site, site_id=site_id,
+                )
 
                 def run_agent():
                     global _agent
@@ -166,13 +189,14 @@ async def websocket_endpoint(ws: WebSocket):
 
     except WebSocketDisconnect:
         log.info("WebSocket client disconnected")
+        _input_event.set()  # unblock agent thread if waiting
         if _agent:
             _agent.stop()
 
 
 # --- CLI mode ---
 
-def run_cli(task_details: dict, site: dict | None = None):
+def run_cli(task_details: dict, site: dict | None = None, site_id: str | None = None):
     """Run a task directly from the command line (no server)."""
     print(f"\n--- LocalAgent CLI ---")
     print(f"Model: {OLLAMA_MODEL}")
@@ -192,7 +216,15 @@ def run_cli(task_details: dict, site: dict | None = None):
         prefix = {"thinking": "🤔", "action": "⚡", "done": "✅", "error": "❌"}.get(status, "•")
         print(f"  {prefix} [{status}] {msg}")
 
-    agent = AgentLoop(task_details, on_status=on_status, site=site)
+    def on_input(prompt: str) -> str:
+        print(f"\n  🆘 AGENT NEEDS HELP: {prompt}")
+        print(f"     (see latest screenshot: {DEBUG_DIR}/latest.png)")
+        try:
+            return input("  ➡️  Your suggestion: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return ""
+
+    agent = AgentLoop(task_details, on_status=on_status, on_input=on_input, site=site, site_id=site_id)
     result = agent.run()
 
     print(f"\n--- Result ---")
@@ -201,9 +233,20 @@ def run_cli(task_details: dict, site: dict | None = None):
 
 
 if __name__ == "__main__":
-    if "--cli" in sys.argv:
-        # Example: python main.py --cli
-        #          python main.py --cli --site google-test
+    # Parse --site flag (shared across modes)
+    site_id = DEFAULT_SITE_ID
+    if "--site" in sys.argv:
+        idx = sys.argv.index("--site")
+        if idx + 1 < len(sys.argv):
+            site_id = sys.argv[idx + 1]
+
+    if "--record" in sys.argv:
+        # Record a demonstration: python main.py --record --site tower-a
+        from demonstrations.recorder import run_interactive_recording
+        run_interactive_recording(site_id)
+
+    elif "--cli" in sys.argv:
+        # Run agent: python main.py --cli --site google-test
         mock_task = {
             "building": "Tower A",
             "license_plate": "XYZ-5678",
@@ -214,14 +257,9 @@ if __name__ == "__main__":
                 "My licence plate is XYZ-5678. Can you patch me through?"
             ),
         }
-        site_id = DEFAULT_SITE_ID
-        if "--site" in sys.argv:
-            idx = sys.argv.index("--site")
-            if idx + 1 < len(sys.argv):
-                site_id = sys.argv[idx + 1]
         site = get_site(site_id)
         print(f"Site: {site['name']} ({site['app']})")
-        run_cli(mock_task, site=site)
+        run_cli(mock_task, site=site, site_id=site_id)
     else:
         log.info("Starting LocalAgent Linux backend on %s:%d", HOST, PORT)
         uvicorn.run(app, host=HOST, port=PORT)
