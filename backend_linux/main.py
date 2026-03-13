@@ -251,18 +251,25 @@ if __name__ == "__main__":
 
     elif "--cli" in sys.argv:
         # Run agent: python main.py --cli --site google-test
+        import random
+        from testserver.data import BOOKINGS
+
+        # Pick a random active booking for a realistic test
+        active = [b for b in BOOKINGS if b["status"] == "active"]
+        pick = random.choice(active)
         mock_task = {
-            "building": "Tower A",
-            "license_plate": "XYZ-5678",
-            "booking_bay": "B12",
-            "reason": "Employee, lost parking ticket",
+            "building": pick["building"],
+            "license_plate": pick["plate"],
+            "booking_bay": pick["bay"],
+            "reason": pick["reason"],
             "raw_transcript": (
-                "Hi, I'm an employee of Tower A. I lost my parking ticket. "
-                "My licence plate is XYZ-5678. Can you patch me through?"
+                f"Hi, I'm a {pick['reason'].lower()} at {pick['building']}. "
+                f"My licence plate is {pick['plate']}. Can you verify my booking?"
             ),
         }
         site = get_site(site_id)
         print(f"Site: {site['name']} ({site['app']})")
+        print(f"Test booking: {pick['driver']} — {pick['plate']} — {pick['building']} bay {pick['bay']}")
         run_cli(mock_task, site=site, site_id=site_id)
     else:
         log.info("Starting LocalAgent Linux backend on %s:%d", HOST, PORT)
