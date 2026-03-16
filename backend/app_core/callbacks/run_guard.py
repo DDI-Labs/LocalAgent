@@ -39,6 +39,24 @@ class RunGuardCallback(AsyncCallbackHandler):
         self._consecutive_waits = 0
         self._run_start_time: float = 0.0
         self.halt_reason: str | None = None
+        # Time spent paused for HITL — subtracted from elapsed wall-clock
+        self._hitl_paused_total: float = 0.0
+        self._hitl_pause_start: float | None = None
+
+    # -- HITL pause tracking ---------------------------------------------------
+
+    def pause_timer(self) -> None:
+        """Call when HITL starts waiting — pauses the wall-clock timer."""
+        if self._hitl_pause_start is None:
+            self._hitl_pause_start = time.monotonic()
+
+    def resume_timer(self) -> None:
+        """Call when HITL finishes — resumes the wall-clock timer."""
+        if self._hitl_pause_start is not None:
+            self._hitl_paused_total += time.monotonic() - self._hitl_pause_start
+            self._hitl_pause_start = None
+
+    # -- callback hooks -------------------------------------------------------
 
     async def on_run_start(
         self, kwargs: Dict[str, Any], old_items: List[Dict[str, Any]]
@@ -46,6 +64,8 @@ class RunGuardCallback(AsyncCallbackHandler):
         self._consecutive_waits = 0
         self._run_start_time = time.monotonic()
         self.halt_reason = None
+        self._hitl_paused_total = 0.0
+        self._hitl_pause_start = None
 
     async def on_computer_call_end(
         self, item: Dict[str, Any], result: List[Dict[str, Any]]
@@ -72,8 +92,8 @@ class RunGuardCallback(AsyncCallbackHandler):
             logger.warning(self.halt_reason)
             return False
 
-        # Guard 2: wall-clock timeout
-        elapsed = time.monotonic() - self._run_start_time
+        # Guard 2: wall-clock timeout (excluding time paused for HITL)
+        elapsed = time.monotonic() - self._run_start_time - self._hitl_paused_total
         if elapsed > self.timeout_seconds:
             self.halt_reason = (
                 f"Agent timed out after {elapsed:.0f}s "

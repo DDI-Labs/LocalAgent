@@ -1,0 +1,184 @@
+{
+  "kwargs": {
+    "model": "openrouter/anthropic/claude-sonnet-4.5",
+    "messages": [
+      {
+        "role": "user",
+        "content": "You are controlling a macOS desktop. CRITICAL RULES:\n- To open apps: hotkey(key='command space'), then type(content='AppName'). Enter will be pressed automatically after typing.\n- Do NOT press enter yourself after typing in Spotlight. It is handled automatically.\n- Do NOT look for taskbar/dock icons. Use Spotlight only.\n- After typing an app name, wait() for the app to load.\n- When searching in apps like Spotify, YouTube, or browsers, use your knowledge to understand what the user means. For example, 'bohemian rhapsody' is a song by Queen, 'Taylor Swift' is an artist, 'Dark Side of the Moon' is an album. After searching, click the correct category (Songs, Artists, Albums) if available, then click the correct result.\n"
+      },
+      {
+        "role": "user",
+        "content": "You are controlling a macOS desktop. CRITICAL RULES:\n- To open apps: hotkey(key='command space'), then type(content='AppName'). Enter will be pressed automatically after typing.\n- Do NOT press enter yourself after typing in <<PII:LOCATION_1>>. It is handled automatically.\n- Do NOT look for taskbar/dock icons. Use Spotlight only.\n- After typing an app name, wait() for the app to load.\n- When searching in apps like <<PII:LOCATION_2>>, <<PII:LOCATION_3>>, or browsers, use your knowledge to understand what the user means. For example, 'bohemian rhapsody' is a song by Queen, '<<PII:PERSON_1>> is an artist, 'Dark Side of the Moon' is an album. After searching, click the correct category (<<PII:LOCATION_4>>, Artists, <<PII:LOCATION_5>>) if available, then click the correct result.\n\n\nTask: google chrome is already open and in the foreground. You can see it in the screenshot above. Do NOT open google chrome again. Do NOT use Spotlight. Do NOT use <<PII:LOCATION_6>>. Do NOT click the Dock. The current screen IS google chrome \u2014 proceed directly with the task. To search in google chrome, click the search icon or search bar inside the google chrome window first, then type your query. Do NOT type into any other field. Task: access youtube"
+      },
+      {
+        "role": "assistant",
+        "content": "Taking a screenshot to see the current state.",
+        "tool_calls": [
+          {
+            "id": "88880f1d230842a6aa0f642cb1f4e8f3",
+            "type": "function",
+            "function": {
+              "name": "computer",
+              "arguments": "{\"type\": \"screenshot\"}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "88880f1d230842a6aa0f642cb1f4e8f3",
+        "content": "[Execution completed. See screenshot below]"
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "image_url",
+            "image_url": "[omitted]"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": "You are controlling a macOS desktop. CRITICAL RULES:\n- To open apps: hotkey(key='command space'), then type(content='AppName'). Enter will be pressed automatically after typing.\n- Do NOT press enter yourself after typing in <<PII:LOCATION_1>>. It is handled automatically.\n- Do NOT look for taskbar/dock icons. Use Spotlight only.\n- After typing an app name, wait() for the app to load.\n- When searching in apps like <<PII:LOCATION_2>>, <<PII:LOCATION_3>>, or browsers, use your knowledge to understand what the user means. For example, 'bohemian rhapsody' is a song by Queen, '<<PII:PERSON_1>> is an artist, 'Dark Side of the Moon' is an album. After searching, click the correct category (<<PII:LOCATION_4>>, Artists, <<PII:LOCATION_5>>) if available, then click the correct result.\n\n\nTask: Access google chrome amd playu a song on youtube"
+      },
+      {
+        "role": "assistant",
+        "content": "I can see Google Chrome is already open with Google Meet. I can see there's a YouTube bookmark/shortcut in the bookmarks bar at the top. Let me click on it to access YouTube.",
+        "tool_calls": [
+          {
+            "id": "toolu_bdrk_01XXod5F1aAMuYXnNri5AT7Y",
+            "type": "function",
+            "function": {
+              "name": "computer",
+              "arguments": "{\"button\": \"left\", \"type\": \"click\", \"element_description\": \"youtube bookmark in the bookmarks bar\"}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "toolu_bdrk_01XXod5F1aAMuYXnNri5AT7Y",
+        "content": "[Execution completed. See screenshot below]"
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "image_url",
+            "image_url": "[omitted]"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": "Great! YouTube is now open. I can see the YouTube home page with various videos. Now I need to search for a song to play. Let me click on the search bar at the top of the page and search for a popular song.",
+        "tool_calls": [
+          {
+            "id": "toolu_bdrk_01F1VkJnL4wp9KJ7BT8Sthmx",
+            "type": "function",
+            "function": {
+              "name": "computer",
+              "arguments": "{\"button\": \"left\", \"type\": \"click\", \"element_description\": \"Search bar with placeholder text \\\"Search\\\"\"}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "toolu_bdrk_01F1VkJnL4wp9KJ7BT8Sthmx",
+        "content": "[Execution completed. See screenshot below]"
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "image_url",
+            "image_url": "[omitted]"
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "computer",
+          "description": "Control a computer by taking screenshots and interacting with UI elements. This tool uses element descriptions to locate and interact with UI elements on the screen (e.g., 'red submit button', 'search text field', 'hamburger menu icon', 'close button in top right corner').",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "screenshot",
+                  "click",
+                  "double_click",
+                  "drag",
+                  "type",
+                  "keypress",
+                  "scroll",
+                  "move",
+                  "wait",
+                  "get_current_url",
+                  "get_dimensions",
+                  "get_environment"
+                ],
+                "description": "The action to perform (required for all actions)"
+              },
+              "element_description": {
+                "type": "string",
+                "description": "Description of the element to interact with (required for click, double_click, move, scroll actions)"
+              },
+              "start_element_description": {
+                "type": "string",
+                "description": "Description of the element to start dragging from (required for drag action)"
+              },
+              "end_element_description": {
+                "type": "string",
+                "description": "Description of the element to drag to (required for drag action)"
+              },
+              "text": {
+                "type": "string",
+                "description": "The text to type (required for type action)"
+              },
+              "keys": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Key(s) to press (required for keypress action)"
+              },
+              "button": {
+                "type": "string",
+                "enum": [
+                  "left",
+                  "right",
+                  "wheel",
+                  "back",
+                  "forward"
+                ],
+                "description": "The mouse button to use for click action (required for click and double_click action)"
+              },
+              "scroll_x": {
+                "type": "integer",
+                "description": "Horizontal scroll amount for scroll action (required for scroll action)"
+              },
+              "scroll_y": {
+                "type": "integer",
+                "description": "Vertical scroll amount for scroll action (required for scroll action)"
+              }
+            },
+            "required": [
+              "action"
+            ]
+          }
+        }
+      }
+    ],
+    "max_retries": 3,
+    "stream": false,
+    "use_prompt_caching": true
+  },
+  "created_at": "139928884411304380"
+}

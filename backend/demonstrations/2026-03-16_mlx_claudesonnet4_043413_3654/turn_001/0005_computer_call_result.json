@@ -1,0 +1,25 @@
+{
+  "item": {
+    "type": "computer_call",
+    "call_id": "toolu_bdrk_01LN1GbcMhFGGwfYbo6VW69c",
+    "action": {
+      "button": "left",
+      "type": "click",
+      "x": 767,
+      "y": 200
+    },
+    "status": "completed"
+  },
+  "result": [
+    {
+      "type": "computer_call_output",
+      "call_id": "toolu_bdrk_01LN1GbcMhFGGwfYbo6VW69c",
+      "acknowledged_safety_checks": [],
+      "output": {
+        "type": "input_image",
+        "image_url": "[omitted]"
+      }
+    }
+  ],
+  "created_at": "139928889433799090"
+}

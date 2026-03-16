@@ -1,0 +1,16 @@
+{
+  "trajectory_id": "2026-03-16_mlx_claudesonnet4_140610_a3a7",
+  "created_at": "139929231707796330",
+  "status": "running",
+  "kwargs": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "You are controlling a macOS desktop. CRITICAL RULES:\n- To open apps: hotkey(key='command space'), then type(content='AppName'). Enter will be pressed automatically after typing.\n- Do NOT press enter yourself after typing in Spotlight. It is handled automatically.\n- Do NOT look for taskbar/dock icons. Use Spotlight only.\n- After typing an app name, wait() for the app to load.\n- When searching in apps like Spotify, YouTube, or browsers, use your knowledge to understand what the user means. For example, 'bohemian rhapsody' is a song by Queen, 'Taylor Swift' is an artist, 'Dark Side of the Moon' is an album. After searching, click the correct category (Songs, Artists, Albums) if available, then click the correct result.\n\n\nTask: Open youtube on chrome and play a song"
+      }
+    ],
+    "stream": false,
+    "model": "mlx/mlx-community/UI-TARS-1.5-7B-6bit+openrouter/anthropic/claude-sonnet-4.5",
+    "agent_loop": "ComposedGroundedConfig"
+  }
+}

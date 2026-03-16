@@ -1,12 +1,31 @@
-import { Activity, Cpu, Zap, ShieldX } from "lucide-react";
+import { Activity, Cpu, Zap, ShieldX, Hand, GraduationCap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface StatCardsProps {
   isConnected: boolean;
   currentTask: string;
+  isHitlWaiting?: boolean;
+  isTrainingMode?: boolean;
 }
 
-export function StatCards({ isConnected, currentTask }: StatCardsProps) {
+export function StatCards({ isConnected, currentTask, isHitlWaiting = false, isTrainingMode = false }: StatCardsProps) {
+  const taskIcon = isHitlWaiting
+    ? Hand
+    : currentTask === "Blocked"
+      ? ShieldX
+      : Zap;
+
+  const taskDot =
+    isHitlWaiting ||
+    currentTask === "Blocked" ||
+    currentTask === "Error";
+
+  const taskDotColor = isHitlWaiting
+    ? "bg-warning"
+    : currentTask === "Blocked"
+      ? "bg-blocked"
+      : "bg-danger";
+
   const cards = [
     {
       label: "Agent Status",
@@ -18,16 +37,16 @@ export function StatCards({ isConnected, currentTask }: StatCardsProps) {
     {
       label: "Current Task",
       value: currentTask,
-      icon: currentTask === "Blocked" ? ShieldX : Zap,
-      dot: currentTask === "Blocked" || currentTask === "Error",
-      dotColor: currentTask === "Blocked" ? "bg-blocked" : "bg-danger",
+      icon: taskIcon,
+      dot: taskDot,
+      dotColor: taskDotColor,
     },
     {
       label: "System",
-      value: "localhost:8000",
-      icon: Cpu,
+      value: isTrainingMode ? "Training Mode" : "localhost:8000",
+      icon: isTrainingMode ? GraduationCap : Cpu,
       dot: true,
-      dotColor: isConnected ? "bg-success" : "bg-danger",
+      dotColor: isTrainingMode ? "bg-accent" : isConnected ? "bg-success" : "bg-danger",
     },
   ];
 
@@ -36,7 +55,12 @@ export function StatCards({ isConnected, currentTask }: StatCardsProps) {
       {cards.map((card) => (
         <div
           key={card.label}
-          className="rounded-xl border border-border bg-bg-card p-4 transition-colors hover:bg-bg-card-hover"
+          className={cn(
+            "rounded-xl border bg-bg-card p-4 transition-colors hover:bg-bg-card-hover",
+            card.label === "Current Task" && isHitlWaiting
+              ? "border-warning/40"
+              : "border-border",
+          )}
         >
           <div className="mb-3 flex items-center justify-between">
             <span className="text-xs font-medium tracking-wide text-text-secondary uppercase">

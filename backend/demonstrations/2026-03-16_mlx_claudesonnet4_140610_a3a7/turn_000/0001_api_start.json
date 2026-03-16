@@ -1,0 +1,124 @@
+{
+  "kwargs": {
+    "model": "openrouter/anthropic/claude-sonnet-4.5",
+    "messages": [
+      {
+        "role": "user",
+        "content": "You are controlling a macOS desktop. CRITICAL RULES:\n- To open apps: hotkey(key='command space'), then type(content='AppName'). Enter will be pressed automatically after typing.\n- Do NOT press enter yourself after typing in Spotlight. It is handled automatically.\n- Do NOT look for taskbar/dock icons. Use Spotlight only.\n- After typing an app name, wait() for the app to load.\n- When searching in apps like Spotify, YouTube, or browsers, use your knowledge to understand what the user means. For example, 'bohemian rhapsody' is a song by Queen, 'Taylor Swift' is an artist, 'Dark Side of the Moon' is an album. After searching, click the correct category (Songs, Artists, Albums) if available, then click the correct result.\n"
+      },
+      {
+        "role": "user",
+        "content": "You are controlling a macOS desktop. CRITICAL RULES:\n- To open apps: hotkey(key='command space'), then type(content='AppName'). Enter will be pressed automatically after typing.\n- Do NOT press enter yourself after typing in <<PII:LOCATION_1>>. It is handled automatically.\n- Do NOT look for taskbar/dock icons. Use Spotlight only.\n- After typing an app name, wait() for the app to load.\n- When searching in apps like <<PII:LOCATION_2>>, <<PII:LOCATION_3>>, or browsers, use your knowledge to understand what the user means. For example, 'bohemian rhapsody' is a song by Queen, '<<PII:PERSON_1>> is an artist, 'Dark Side of the Moon' is an album. After searching, click the correct category (<<PII:LOCATION_4>>, Artists, <<PII:LOCATION_5>>) if available, then click the correct result.\n\n\nTask: Open youtube on chrome and play a song"
+      },
+      {
+        "role": "assistant",
+        "content": "Taking a screenshot to see the current computer screen.",
+        "tool_calls": [
+          {
+            "id": "3c4dd2f5f1eb48319e87c3c6281d008b",
+            "type": "function",
+            "function": {
+              "name": "computer",
+              "arguments": "{\"type\": \"screenshot\"}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "3c4dd2f5f1eb48319e87c3c6281d008b",
+        "content": "[Execution completed. See screenshot below]"
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "image_url",
+            "image_url": "[omitted]"
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "computer",
+          "description": "Control a computer by taking screenshots and interacting with UI elements. This tool uses element descriptions to locate and interact with UI elements on the screen (e.g., 'red submit button', 'search text field', 'hamburger menu icon', 'close button in top right corner').",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "screenshot",
+                  "click",
+                  "double_click",
+                  "drag",
+                  "type",
+                  "keypress",
+                  "scroll",
+                  "move",
+                  "wait",
+                  "get_current_url",
+                  "get_dimensions",
+                  "get_environment"
+                ],
+                "description": "The action to perform (required for all actions)"
+              },
+              "element_description": {
+                "type": "string",
+                "description": "Description of the element to interact with (required for click, double_click, move, scroll actions)"
+              },
+              "start_element_description": {
+                "type": "string",
+                "description": "Description of the element to start dragging from (required for drag action)"
+              },
+              "end_element_description": {
+                "type": "string",
+                "description": "Description of the element to drag to (required for drag action)"
+              },
+              "text": {
+                "type": "string",
+                "description": "The text to type (required for type action)"
+              },
+              "keys": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Key(s) to press (required for keypress action)"
+              },
+              "button": {
+                "type": "string",
+                "enum": [
+                  "left",
+                  "right",
+                  "wheel",
+                  "back",
+                  "forward"
+                ],
+                "description": "The mouse button to use for click action (required for click and double_click action)"
+              },
+              "scroll_x": {
+                "type": "integer",
+                "description": "Horizontal scroll amount for scroll action (required for scroll action)"
+              },
+              "scroll_y": {
+                "type": "integer",
+                "description": "Vertical scroll amount for scroll action (required for scroll action)"
+              }
+            },
+            "required": [
+              "action"
+            ]
+          }
+        }
+      }
+    ],
+    "max_retries": 3,
+    "stream": false,
+    "use_prompt_caching": true
+  },
+  "created_at": "139929231754760660"
+}

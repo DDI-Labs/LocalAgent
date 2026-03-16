@@ -87,7 +87,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     )
                     continue
 
-                if agent.is_busy():
+                if agent.is_busy() and not agent.is_hitl_waiting():
                     await websocket.send_text(
                         json.dumps({"status": "error", "msg": "Agent is busy. Wait for current task to finish."})
                     )
@@ -101,6 +101,26 @@ async def websocket_endpoint(websocket: WebSocket):
                 asyncio.ensure_future(
                     agent.run_agent_task(content, broadcast=make_broadcast)
                 )
+
+            elif msg_type == "training_mode":
+                enabled = payload.get("enabled", False)
+                agent.set_training_mode(enabled)
+                label = "enabled" if enabled else "disabled"
+                await manager.broadcast(
+                    "info",
+                    f"Training mode {label}. "
+                    + ("Every action now requires approval." if enabled else "Returning to normal operation."),
+                    training_mode=enabled,
+                )
+
+            elif msg_type == "hitl_response":
+                # Human-in-the-Loop response from the frontend
+                if not agent.is_hitl_waiting():
+                    await websocket.send_text(
+                        json.dumps({"status": "error", "msg": "No HITL request pending."})
+                    )
+                    continue
+                agent.submit_hitl_response(payload)
 
             elif msg_type == "reset":
                 agent.reset_history()

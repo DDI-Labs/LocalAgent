@@ -8,6 +8,7 @@ import {
   XCircle,
   ShieldX,
   Info,
+  Hand,
 } from "lucide-react";
 import type { LogEntry } from "@/hooks/useAgentSocket";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,7 @@ const statusColor: Record<string, string> = {
   error: "text-danger",
   blocked: "text-blocked",
   info: "text-text-secondary",
+  waiting_for_human: "text-warning",
 };
 
 const statusIcon: Record<string, typeof Terminal> = {
@@ -33,6 +35,7 @@ const statusIcon: Record<string, typeof Terminal> = {
   error: XCircle,
   blocked: ShieldX,
   info: Info,
+  waiting_for_human: Hand,
 };
 
 export function ProcessMonitor({ logs, onClear }: ProcessMonitorProps) {

@@ -61,6 +61,31 @@ MLX_MEMORY_LIMIT = float(os.getenv("MLX_MEMORY_LIMIT", "0.70"))
 # Trajectory / audit trail directory (relative to project root).
 TRAJECTORY_DIR = os.getenv("TRAJECTORY_DIR", "trajectories")
 TRAJECTORY_SCREENSHOT_DIR = os.getenv("TRAJECTORY_SCREENSHOT_DIR", "trajectories/screenshots")
+# Training mode saves gold-standard human demonstrations for fine-tuning.
+TRAINING_TRAJECTORY_DIR = os.getenv("TRAINING_TRAJECTORY_DIR", "demonstrations")
+TRAINING_TRAJECTORY_SCREENSHOT_DIR = os.getenv(
+    "TRAINING_TRAJECTORY_SCREENSHOT_DIR", "demonstrations/screenshots"
+)
+
+# ---------------------------------------------------------------------------
+# Human-in-the-Loop (HITL)
+# ---------------------------------------------------------------------------
+# Master toggle for HITL features (escalation on stuck loops + sensitive action gating).
+HITL_ENABLED = os.getenv("HITL_ENABLED", "true").lower() == "true"
+# Comma-separated keywords that trigger an approval prompt before the action executes.
+# Matched case-insensitively against the planning model's reasoning and action content.
+HITL_SENSITIVE_ACTIONS = [
+    s.strip()
+    for s in os.getenv(
+        "HITL_SENSITIVE_ACTIONS",
+        "Send,Delete,Confirm,Submit,Purchase,Remove,Trash,Pay,Uninstall",
+    ).split(",")
+    if s.strip()
+]
+# Seconds to wait for a human response before timing out and rejecting.
+HITL_APPROVAL_TIMEOUT = int(os.getenv("HITL_APPROVAL_TIMEOUT", "120"))
+# Maximum number of takeover attempts per task before giving up.
+HITL_MAX_TAKEOVER_ATTEMPTS = int(os.getenv("HITL_MAX_TAKEOVER_ATTEMPTS", "3"))
 
 # WebSocket settings
 WS_HEARTBEAT_INTERVAL = 30  # Seconds between keep-alive pings

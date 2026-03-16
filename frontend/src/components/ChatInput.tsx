@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Loader2, RotateCcw } from "lucide-react";
+import { Send, Loader2, RotateCcw, GraduationCap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ChatInputProps {
   isLoading: boolean;
+  isTrainingMode: boolean;
   onSend: (prompt: string) => void;
   onReset: () => void;
+  onToggleTraining: () => void;
 }
 
 const QUICK_ACTIONS = [
@@ -16,7 +18,7 @@ const QUICK_ACTIONS = [
   "Search for Bohemian Rhapsody",
 ];
 
-export function ChatInput({ isLoading, onSend, onReset }: ChatInputProps) {
+export function ChatInput({ isLoading, isTrainingMode, onSend, onReset, onToggleTraining }: ChatInputProps) {
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -37,13 +39,27 @@ export function ChatInput({ isLoading, onSend, onReset }: ChatInputProps) {
         <h2 className="text-sm font-semibold tracking-wide text-text-secondary uppercase">
           Agent Control
         </h2>
-        <button
-          onClick={onReset}
-          className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-text-secondary transition-colors hover:bg-bg-secondary hover:text-text-primary"
-        >
-          <RotateCcw className="h-3 w-3" />
-          Reset
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onToggleTraining}
+            className={cn(
+              "flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors",
+              isTrainingMode
+                ? "bg-accent/15 text-accent border border-accent/30"
+                : "text-text-secondary hover:bg-bg-secondary hover:text-text-primary",
+            )}
+          >
+            <GraduationCap className="h-3 w-3" />
+            {isTrainingMode ? "Training On" : "Train"}
+          </button>
+          <button
+            onClick={onReset}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-text-secondary transition-colors hover:bg-bg-secondary hover:text-text-primary"
+          >
+            <RotateCcw className="h-3 w-3" />
+            Reset
+          </button>
+        </div>
       </div>
 
       {/* Input row */}

@@ -1,0 +1,103 @@
+{
+  "timestamp": "139928888998633020",
+  "model": "mlx/mlx-community/UI-TARS-1.5-7B-6bit+openrouter/anthropic/claude-sonnet-4.5",
+  "kwargs": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "You are controlling a macOS desktop. CRITICAL RULES:\n- To open apps: hotkey(key='command space'), then type(content='AppName'). Enter will be pressed automatically after typing.\n- Do NOT press enter yourself after typing in Spotlight. It is handled automatically.\n- Do NOT look for taskbar/dock icons. Use Spotlight only.\n- After typing an app name, wait() for the app to load.\n- When searching in apps like Spotify, YouTube, or browsers, use your knowledge to understand what the user means. For example, 'bohemian rhapsody' is a song by Queen, 'Taylor Swift' is an artist, 'Dark Side of the Moon' is an album. After searching, click the correct category (Songs, Artists, Albums) if available, then click the correct result.\n"
+      },
+      {
+        "role": "user",
+        "content": "You are controlling a macOS desktop. CRITICAL RULES:\n- To open apps: hotkey(key='command space'), then type(content='AppName'). Enter will be pressed automatically after typing.\n- Do NOT press enter yourself after typing in <<PII:LOCATION_1>>. It is handled automatically.\n- Do NOT look for taskbar/dock icons. Use Spotlight only.\n- After typing an app name, wait() for the app to load.\n- When searching in apps like <<PII:LOCATION_2>>, <<PII:LOCATION_3>>, or browsers, use your knowledge to understand what the user means. For example, 'bohemian rhapsody' is a song by Queen, '<<PII:PERSON_1>> is an artist, 'Dark Side of the Moon' is an album. After searching, click the correct category (<<PII:LOCATION_4>>, Artists, <<PII:LOCATION_5>>) if available, then click the correct result.\n\n\nTask: Access chrome and open youtube to play a song"
+      }
+    ],
+    "model": "mlx/mlx-community/UI-TARS-1.5-7B-6bit+openrouter/anthropic/claude-sonnet-4.5",
+    "tools": [
+      {
+        "type": "computer",
+        "computer": "<computer:Computer>"
+      }
+    ],
+    "stream": false,
+    "computer_handler": "<computer:cuaComputerHandler>",
+    "max_retries": 3,
+    "use_prompt_caching": true
+  },
+  "response": {
+    "output": [
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "Taking a screenshot to see the current computer screen."
+          }
+        ]
+      },
+      {
+        "action": {
+          "type": "screenshot"
+        },
+        "call_id": "5eb05b0ff45b498db09b02b934e84f7e",
+        "status": "completed",
+        "type": "computer_call"
+      },
+      {
+        "type": "computer_call_output",
+        "call_id": "5eb05b0ff45b498db09b02b934e84f7e",
+        "output": {
+          "type": "input_image",
+          "image_url": "[omitted]"
+        }
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "Perfect! Chrome is already open with YouTube loaded. Now I need to search for a song to play. Let me click on the search bar and search for a popular song."
+          }
+        ]
+      },
+      {
+        "type": "computer_call",
+        "call_id": "toolu_bdrk_01LN1GbcMhFGGwfYbo6VW69c",
+        "action": {
+          "button": "left",
+          "type": "click",
+          "x": 767,
+          "y": 200
+        },
+        "status": "completed"
+      }
+    ],
+    "usage": {
+      "completion_tokens": 130,
+      "prompt_tokens": 3022,
+      "total_tokens": 3152,
+      "completion_tokens_details": {
+        "audio_tokens": 0,
+        "reasoning_tokens": 0,
+        "image_tokens": 0
+      },
+      "prompt_tokens_details": {
+        "audio_tokens": 0,
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost": 0.011016,
+      "is_byok": false,
+      "cost_details": {
+        "upstream_inference_cost": 0.011016,
+        "upstream_inference_prompt_cost": 0.009066,
+        "upstream_inference_completions_cost": 0.00195
+      },
+      "response_cost": 0.011016
+    }
+  },
+  "created_at": "139928888998642100"
+}

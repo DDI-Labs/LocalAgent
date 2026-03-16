@@ -1,10 +1,16 @@
-"""Cua ComputerAgent orchestrator — composed model pipeline.
+"""Cua ComputerAgent orchestrator — composed model pipeline with HITL.
 
 Architecture:
   1. Local Grounding (UI-TARS 7B MLX) — processes screenshots, identifies UI elements
   2. PII Sanitization — masks personal data before cloud calls
   3. Cloud Planning (Claude Sonnet 4.5 via OpenRouter) — decides actions from sanitized text
   4. Local Execution — re-maps to real data and performs actions via Computer tool
+
+Human-in-the-Loop (HITL):
+  - Escalation: when the agent gets stuck (consecutive waits), the system pauses
+    and asks the user to perform a manual click (takeover mode).
+  - Protected actions: when the planning model proposes an action matching a
+    sensitive keyword list, the system pauses for user approval before executing.
 """
 
 import asyncio
@@ -13,6 +19,7 @@ import gc
 import logging
 import socket
 import uuid
+from pathlib import Path
 from typing import Callable
 
 from computer import Computer
@@ -28,14 +35,22 @@ from app_core.config import (
     CUA_MODEL,
     CUA_COMPUTER_SERVER_HOST,
     CUA_COMPUTER_SERVER_PORT,
+    HITL_APPROVAL_TIMEOUT,
+    HITL_ENABLED,
+    HITL_MAX_TAKEOVER_ATTEMPTS,
+    HITL_SENSITIVE_ACTIONS,
     IMAGE_RETENTION_COUNT,
     MLX_MEMORY_LIMIT,
     TRAJECTORY_DIR,
     TRAJECTORY_SCREENSHOT_DIR,
+    TRAINING_TRAJECTORY_DIR,
+    TRAINING_TRAJECTORY_SCREENSHOT_DIR,
     PII_SANITIZATION_ENABLED,
     OPENROUTER_API_KEY,
 )
 from app_core.callbacks import (
+    HITLCallback,
+    HITLRejectedError,
     HistoryTrimCallback,
     ImageOptimizerCallback,
     PIISanitizerCallback,
@@ -113,7 +128,9 @@ async def _take_seeded_screenshot() -> list[dict]:
     ]
 
 
+# ---------------------------------------------------------------------------
 # Module-level state
+# ---------------------------------------------------------------------------
 _computer: Computer | None = None
 _agent: ComputerAgent | None = None
 _history: list[dict] = []
@@ -124,11 +141,108 @@ _spotlight_open = False
 _ws_status_cb: WebSocketStatusCallback | None = None
 _run_guard_cb: RunGuardCallback | None = None
 _pii_cb: PIISanitizerCallback | None = None
+_hitl_cb: HITLCallback | None = None
+_trajectory_cb: TrajectorySaverCallback | None = None
 
+# HITL takeover state — used when the agent is stuck and waiting for a
+# manual click from the user.
+_hitl_takeover_event = asyncio.Event()
+_hitl_takeover_response: dict | None = None
+_hitl_takeover_active = False
+
+
+# ---------------------------------------------------------------------------
+# HITL public API (called from WebSocket handler)
+# ---------------------------------------------------------------------------
+
+def submit_hitl_response(response: dict) -> None:
+    """Route a HITL response from the frontend to the correct handler.
+
+    For *approval* requests the HITLCallback itself holds the asyncio.Event.
+    For *takeover* requests the module-level event is used.
+    """
+    global _hitl_takeover_response
+
+    mode = response.get("mode", "")
+
+    if mode == "approval" and _hitl_cb is not None and _hitl_cb.is_waiting:
+        _hitl_cb.submit_response(response)
+        return
+
+    if mode == "takeover" and _hitl_takeover_active:
+        _hitl_takeover_response = response
+        _hitl_takeover_event.set()
+        return
+
+    # Cancel — stop any pending HITL
+    if mode == "cancel":
+        if _hitl_cb is not None and _hitl_cb.is_waiting:
+            _hitl_cb.cancel()
+        if _hitl_takeover_active:
+            _hitl_takeover_response = {"action": "cancel"}
+            _hitl_takeover_event.set()
+        return
+
+    logger.warning("HITL response received but no handler waiting: %s", response)
+
+
+def is_hitl_waiting() -> bool:
+    """Return True if the agent is paused waiting for human input."""
+    return (
+        (_hitl_cb is not None and _hitl_cb.is_waiting)
+        or _hitl_takeover_active
+    )
+
+
+def get_hitl_state() -> dict | None:
+    """Return the current pending HITL request payload, or None."""
+    if _hitl_cb is not None and _hitl_cb.pending_request:
+        return _hitl_cb.pending_request
+    if _hitl_takeover_active:
+        return {"mode": "takeover"}
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Training mode (Composed Grounding demonstrations)
+# ---------------------------------------------------------------------------
+_training_mode = False
+
+
+def set_training_mode(enabled: bool) -> None:
+    """Toggle training mode on or off.
+
+    In training mode every agent action is gated for human approval so the
+    user acts as the "planner" while the grounding model does the "seeing".
+    Trajectories are saved to a dedicated demonstrations directory for
+    fine-tuning the local UI-TARS model.
+    """
+    global _training_mode
+    _training_mode = enabled
+    if _hitl_cb is not None:
+        _hitl_cb.training_mode = enabled
+    # Swap trajectory directory so training demos are kept separate
+    if _trajectory_cb is not None:
+        if enabled:
+            _trajectory_cb.trajectory_dir = Path(TRAINING_TRAJECTORY_DIR)
+            _trajectory_cb.screenshot_dir = Path(TRAINING_TRAJECTORY_SCREENSHOT_DIR)
+        else:
+            _trajectory_cb.trajectory_dir = Path(TRAJECTORY_DIR)
+            _trajectory_cb.screenshot_dir = Path(TRAJECTORY_SCREENSHOT_DIR)
+    logger.info("Training mode %s", "enabled" if enabled else "disabled")
+
+
+def is_training_mode() -> bool:
+    return _training_mode
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle
+# ---------------------------------------------------------------------------
 
 async def initialize():
     """Connect to the Cua computer server and create the composed agent."""
-    global _computer, _agent, _ws_status_cb, _run_guard_cb, _pii_cb
+    global _computer, _agent, _ws_status_cb, _run_guard_cb, _pii_cb, _hitl_cb, _trajectory_cb
 
     import os
 
@@ -154,10 +268,21 @@ async def initialize():
 
     # --- Callback stack ---
     # Order matters: normalisation and security run first, then PII sanitization,
-    # then memory/image optimisation, then observability, then housekeeping.
+    # then HITL gating, then memory/image optimisation, then observability,
+    # then housekeeping.
     _ws_status_cb = WebSocketStatusCallback()
     _run_guard_cb = RunGuardCallback()
     _pii_cb = PIISanitizerCallback(enabled=PII_SANITIZATION_ENABLED)
+    _hitl_cb = HITLCallback(
+        sensitive_actions=HITL_SENSITIVE_ACTIONS,
+        approval_timeout=HITL_APPROVAL_TIMEOUT,
+        enabled=HITL_ENABLED,
+    )
+    _hitl_cb.set_run_guard(_run_guard_cb)
+    _trajectory_cb = TrajectorySaverCallback(
+        trajectory_dir=TRAJECTORY_DIR,
+        screenshot_dir=TRAJECTORY_SCREENSHOT_DIR,
+    )
 
     callbacks = [
         # 1. Normalise malformed LLM output (hotkey→keypress, string keys→list, etc.)
@@ -168,20 +293,19 @@ async def initialize():
         _run_guard_cb,
         # 4. PII sanitization: mask personal data before cloud planning model calls
         _pii_cb,
-        # 5. Memory safety: keep only N most recent screenshots in context
+        # 5. HITL: pause for approval on sensitive actions
+        _hitl_cb,
+        # 6. Memory safety: keep only N most recent screenshots in context
         ImageRetentionCallback(only_n_most_recent_images=IMAGE_RETENTION_COUNT),
-        # 6. Image optimization: downscale/compress screenshots before LLM inference
+        # 7. Image optimization: downscale/compress screenshots before LLM inference
         ImageOptimizerCallback(),
-        # 7. Structured lifecycle logging
+        # 8. Structured lifecycle logging
         LoggingCallback(level=logging.INFO),
-        # 8. Audit trail: save full trajectory (screenshots, prompts, coordinates)
-        TrajectorySaverCallback(
-            trajectory_dir=TRAJECTORY_DIR,
-            screenshot_dir=TRAJECTORY_SCREENSHOT_DIR,
-        ),
-        # 9. Broadcast detailed action status to WebSocket clients
+        # 9. Audit trail: save full trajectory (screenshots, prompts, coordinates)
+        _trajectory_cb,
+        # 10. Broadcast detailed action status to WebSocket clients
         _ws_status_cb,
-        # 10. Trim conversation history to prevent unbounded memory growth
+        # 11. Trim conversation history to prevent unbounded memory growth
         HistoryTrimCallback(history=_history, max_entries=50),
     ]
 
@@ -195,6 +319,7 @@ async def initialize():
     )
     logger.info(
         f"ComputerAgent initialized — model={CUA_MODEL}, "
+        f"hitl={HITL_ENABLED}, "
         f"pii_sanitization={PII_SANITIZATION_ENABLED}, "
         f"image_retention={IMAGE_RETENTION_COUNT}, "
         f"callbacks={len(callbacks)}"
@@ -237,11 +362,115 @@ def is_busy() -> bool:
     return _running
 
 
+# ---------------------------------------------------------------------------
+# HITL takeover helper
+# ---------------------------------------------------------------------------
+
+async def _handle_takeover(broadcast: StatusCallback | None) -> bool:
+    """Pause the task for a human takeover click.
+
+    Takes a fresh screenshot, broadcasts a ``waiting_for_human`` message, and
+    waits for the user to click on the screenshot.  Executes the click via the
+    Computer tool and injects the result into history.
+
+    Returns True if the takeover succeeded and the agent loop should resume,
+    False if the user cancelled or it timed out.
+    """
+    global _hitl_takeover_active, _hitl_takeover_response
+
+    if _computer is None:
+        return False
+
+    def _send(status: str, msg: str, **extra):
+        if broadcast:
+            broadcast(status, msg, **extra)
+
+    # Take a fresh screenshot for the user to click on
+    try:
+        raw = await _computer.interface.screenshot()
+        b64 = base64.b64encode(raw).decode("utf-8")
+        screenshot_url = f"data:image/png;base64,{b64}"
+    except Exception as e:
+        logger.warning(f"Takeover screenshot failed: {e}")
+        return False
+
+    _hitl_takeover_event.clear()
+    _hitl_takeover_response = None
+    _hitl_takeover_active = True
+
+    _send(
+        "waiting_for_human",
+        "Agent is stuck — click on the screen to help.",
+        hitl={"mode": "takeover"},
+        screenshot=screenshot_url,
+    )
+    logger.info("HITL takeover: waiting for user click")
+
+    # Wait for user response
+    try:
+        await asyncio.wait_for(
+            _hitl_takeover_event.wait(), timeout=HITL_APPROVAL_TIMEOUT
+        )
+    except asyncio.TimeoutError:
+        _hitl_takeover_active = False
+        logger.warning("HITL takeover timed out")
+        _send("error", "Takeover timed out — no click received.")
+        return False
+    finally:
+        _hitl_takeover_active = False
+
+    response = _hitl_takeover_response
+    if not response or response.get("action") == "cancel":
+        _send("info", "Takeover cancelled by user.")
+        return False
+
+    # Execute the user's click
+    x = response.get("x")
+    y = response.get("y")
+    if x is None or y is None:
+        _send("error", "Invalid takeover click — missing coordinates.")
+        return False
+
+    try:
+        await _computer.interface.click(x, y)
+        _send("action", f"User clicked at ({x}, {y})")
+        logger.info(f"HITL takeover: executed click at ({x}, {y})")
+    except Exception as e:
+        logger.warning(f"HITL takeover click failed: {e}")
+        _send("error", f"Takeover click failed: {e}")
+        return False
+
+    # Inject the manual click + fresh screenshot into history
+    seed_items = await _take_seeded_screenshot()
+    if seed_items:
+        _history.extend(seed_items)
+
+    # Also inject a note so the planning model knows a human helped
+    _history.append({
+        "role": "user",
+        "content": (
+            "A human operator just clicked at the correct location for you. "
+            "Continue with the task from the current screen state."
+        ),
+    })
+
+    _send("info", "Takeover complete — resuming agent.")
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Main task runner
+# ---------------------------------------------------------------------------
+
 async def run_agent_task(prompt: str, broadcast: StatusCallback | None = None):
     """Run a natural language task through the composed ComputerAgent.
 
     Maintains conversation history for multi-turn context.
     Streams status updates via the broadcast callback.
+
+    When HITL is enabled and the agent gets stuck (consecutive waits), the
+    system enters takeover mode instead of erroring — allowing the user to
+    perform a manual click and resume.
     """
     global _running, _spotlight_open
 
@@ -250,9 +479,9 @@ async def run_agent_task(prompt: str, broadcast: StatusCallback | None = None):
     if _running:
         raise RuntimeError("Agent is already processing a task.")
 
-    def _send(status: str, msg: str):
+    def _send(status: str, msg: str, **extra):
         if broadcast:
-            broadcast(status, msg)
+            broadcast(status, msg, **extra)
 
     _running = True
     _spotlight_open = False
@@ -262,6 +491,8 @@ async def run_agent_task(prompt: str, broadcast: StatusCallback | None = None):
         _ws_status_cb.set_broadcast(broadcast)
     if _pii_cb is not None:
         _pii_cb.set_broadcast(broadcast)
+    if _hitl_cb is not None:
+        _hitl_cb.set_broadcast(broadcast)
 
     try:
         # --- Fast-path: open apps via osascript instead of the vision loop ---
@@ -331,46 +562,86 @@ async def run_agent_task(prompt: str, broadcast: StatusCallback | None = None):
 
         _send("thinking", f"Processing: {prompt[:80]}...")
 
-        async for result in _agent.run(_history):
-            for item in result.get("output", []):
-                msg_type = item.get("type", "")
-                if msg_type == "message":
-                    content_blocks = item.get("content", [])
-                    for block in content_blocks:
-                        if block.get("type") == "text":
-                            text = block["text"]
-                            _send("action", text)
-                            _history.append({"role": "assistant", "content": text})
-                elif msg_type == "computer_call":
-                    action = item.get("action", {})
-                    action_type = action.get("type", "unknown")
+        # ----- Agent loop with HITL takeover support -----
+        takeover_attempts = 0
 
-                    # Track Spotlight flow
-                    if action_type == "keypress":
-                        keys = action.get("keys", [])
-                        if set(keys) == {"command", "space"} or set(keys) == {"cmd", "space"}:
-                            _spotlight_open = True
-                            logger.info("Detected Spotlight open")
-                    elif action_type == "type" and _spotlight_open:
-                        app_name = action.get("content", "") or action.get("text", "")
-                        if app_name and await open_app(app_name):
-                            logger.info(f"Fast-path: opened '{app_name}' via osascript")
-                            _send("action", f"Opened {app_name} (fast-path)")
-                        else:
-                            logger.info("Falling back to auto-Enter after Spotlight type")
-                            await auto_enter_after_type(_computer)
-                        _spotlight_open = False
+        while True:
+            async for result in _agent.run(_history):
+                for item in result.get("output", []):
+                    msg_type = item.get("type", "")
+                    if msg_type == "message":
+                        content_blocks = item.get("content", [])
+                        for block in content_blocks:
+                            if block.get("type") == "text":
+                                text = block["text"]
+                                _send("action", text)
+                                _history.append({"role": "assistant", "content": text})
+                    elif msg_type == "computer_call":
+                        action = item.get("action", {})
+                        action_type = action.get("type", "unknown")
 
-        # Check if RunGuardCallback halted the run
-        if _run_guard_cb and _run_guard_cb.halt_reason:
-            _send("error", _run_guard_cb.halt_reason)
-            _history.append({
-                "role": "assistant",
-                "content": _run_guard_cb.halt_reason,
-            })
-        else:
-            _send("done", "Task complete.")
+                        # Track Spotlight flow
+                        if action_type == "keypress":
+                            keys = action.get("keys", [])
+                            if set(keys) == {"command", "space"} or set(keys) == {"cmd", "space"}:
+                                _spotlight_open = True
+                                logger.info("Detected Spotlight open")
+                        elif action_type == "type" and _spotlight_open:
+                            app_name = action.get("content", "") or action.get("text", "")
+                            if app_name and await open_app(app_name):
+                                logger.info(f"Fast-path: opened '{app_name}' via osascript")
+                                _send("action", f"Opened {app_name} (fast-path)")
+                            else:
+                                logger.info("Falling back to auto-Enter after Spotlight type")
+                                await auto_enter_after_type(_computer)
+                            _spotlight_open = False
 
+            # --- Post-loop: check why the agent stopped ---
+            if not (_run_guard_cb and _run_guard_cb.halt_reason):
+                # Normal completion
+                _send("done", "Task complete.")
+                break
+
+            halt = _run_guard_cb.halt_reason
+
+            # Check if HITL takeover should kick in (stuck on consecutive waits)
+            if (
+                HITL_ENABLED
+                and "consecutive wait" in halt
+                and takeover_attempts < HITL_MAX_TAKEOVER_ATTEMPTS
+            ):
+                takeover_attempts += 1
+                logger.info(
+                    "HITL takeover triggered (attempt %d/%d): %s",
+                    takeover_attempts, HITL_MAX_TAKEOVER_ATTEMPTS, halt,
+                )
+                if await _handle_takeover(broadcast):
+                    # User performed a click — resume the agent loop
+                    continue
+                else:
+                    # User cancelled or timed out — stop the task
+                    _send("error", f"Task stopped: {halt}")
+                    _history.append({
+                        "role": "assistant",
+                        "content": halt,
+                    })
+                    break
+            else:
+                # HITL disabled or max attempts exceeded — error as before
+                _send("error", halt)
+                _history.append({
+                    "role": "assistant",
+                    "content": halt,
+                })
+                break
+
+    except HITLRejectedError as e:
+        logger.info(f"Action rejected via HITL: {e}")
+        _send("blocked", f"Action rejected: {e}")
+        _history.append({
+            "role": "assistant",
+            "content": f"Action rejected by user: {e}",
+        })
     except SecurityBlockedError as e:
         logger.warning(f"Action blocked by security policy: {e}")
         _send("blocked", f"Security policy blocked an action: {e}")
@@ -387,6 +658,8 @@ async def run_agent_task(prompt: str, broadcast: StatusCallback | None = None):
             _ws_status_cb.set_broadcast(None)
         if _pii_cb is not None:
             _pii_cb.set_broadcast(None)
+        if _hitl_cb is not None:
+            _hitl_cb.set_broadcast(None)
         # Reclaim memory between turns — the grounding model allocates large
         # tensors that Python's refcount GC may not collect promptly.
         gc.collect()
@@ -396,6 +669,9 @@ def reset_history():
     """Clear the conversation history for a fresh start."""
     global _history
     _history = []
+    # Cancel any pending HITL requests
+    if _hitl_cb is not None:
+        _hitl_cb.cancel()
     logger.info("Agent conversation history reset.")
 
 
