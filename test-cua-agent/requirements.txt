@@ -1,0 +1,3 @@
+cua-computer
+cua-agent[omni]
+python-dotenv
