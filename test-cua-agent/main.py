@@ -3,19 +3,21 @@ NoMachine Auto-Connect Agent
 Uses CUA to launch a desktop sandbox, open NoMachine, and connect to a remote host.
 """
 
-import asyncio
 import os
+
+# MUST set env vars before any other imports (litellm reads them at import time)
+os.environ.setdefault("LLM_PROVIDER", "ollama")
+if os.environ["LLM_PROVIDER"] == "ollama":
+    os.environ["OPENAI_API_KEY"] = "not-needed"
+    os.environ["OPENAI_BASE_URL"] = "http://localhost:11434/v1"
+    os.environ["OPENAI_API_BASE"] = "http://localhost:11434/v1"
+
+import asyncio
 from dotenv import load_dotenv
+load_dotenv(override=False)  # don't override what we just set
+
 from computer import Computer
 from agent import ComputerAgent
-
-load_dotenv()
-
-# Force Ollama's OpenAI-compatible endpoint for both litellm and OpenAI SDK
-if os.getenv("LLM_PROVIDER", "ollama") == "ollama":
-    os.environ["OPENAI_API_KEY"] = os.environ.get("OPENAI_API_KEY", "not-needed")
-    os.environ["OPENAI_API_BASE"] = "http://localhost:11434/v1"
-    os.environ["OPENAI_BASE_URL"] = "http://localhost:11434/v1"
 
 # --- Configuration ---
 NOMACHINE_HOST = os.getenv("NOMACHINE_HOST", "192.168.1.100")
@@ -27,10 +29,8 @@ LLM_PROVIDER_NAME = os.getenv("LLM_PROVIDER", "ollama")
 def get_model_string() -> str:
     """Return the model string based on the chosen provider."""
     if LLM_PROVIDER_NAME == "vllm":
-        # UI-TARS via vLLM (best accuracy for GUI tasks, needs NVIDIA GPU)
         return os.getenv("VLLM_MODEL", "ByteDance/UI-TARS-1.5-7B")
     else:
-        # Qwen 2.5 VL via Ollama using OpenAI-compatible endpoint (supports vision)
         return "omni+" + os.getenv("OLLAMA_MODEL", "openai/qwen2.5vl:7b")
 
 
@@ -51,12 +51,12 @@ PROMPT = f"""
 
 
 async def main():
-    # Use the custom Docker image with NoMachine pre-installed
     computer = Computer(
         os_type="linux",
         provider_type="docker",
-        image="cua-nomachine:latest",  # our custom image from docker/Dockerfile
+        image="cua-nomachine:latest",
         name="nomachine-agent",
+        timeout=300,
     )
 
     model = get_model_string()
@@ -64,11 +64,12 @@ async def main():
     agent = ComputerAgent(
         model=model,
         tools=[computer],
-        api_base="http://localhost:11434" if LLM_PROVIDER_NAME == "ollama" else os.getenv("VLLM_BASE_URL", "http://localhost:8000/v1"),
+        api_base="http://localhost:11434/v1",
     )
 
     print(f"Starting NoMachine agent (model={model})...")
     print(f"Connecting to: {NOMACHINE_HOST} as {NOMACHINE_USER}")
+    print(f"OPENAI_BASE_URL={os.environ.get('OPENAI_BASE_URL')}")
     print("-" * 50)
 
     async with computer:
