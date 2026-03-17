@@ -20,7 +20,4 @@ RUN curl -fSL "https://download.nomachine.com/download/8.16/Linux/${NOMACHINE_PK
     && dpkg -i /tmp/${NOMACHINE_PKG} || apt-get install -f -y \
     && rm /tmp/${NOMACHINE_PKG}
 
-# Switch back to default user
-USER 1000
-
-WORKDIR /home/user
+# Don't switch user — supervisord needs root
