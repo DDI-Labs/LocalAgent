@@ -19,6 +19,14 @@ if os.getenv("LLM_PROVIDER", "ollama") == "ollama":
 import litellm
 litellm.api_base = os.environ.get("OPENAI_API_BASE", None)
 
+# Patch litellm.acompletion to always inject api_base for Ollama
+_original_acompletion = litellm.acompletion
+async def _patched_acompletion(*args, **kwargs):
+    if "api_base" not in kwargs or kwargs["api_base"] is None:
+        kwargs["api_base"] = litellm.api_base
+    return await _original_acompletion(*args, **kwargs)
+litellm.acompletion = _patched_acompletion
+
 # --- Configuration ---
 NOMACHINE_HOST = os.getenv("NOMACHINE_HOST", "192.168.1.100")
 NOMACHINE_USER = os.getenv("NOMACHINE_USER", "user")
