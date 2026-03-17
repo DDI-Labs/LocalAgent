@@ -6,6 +6,10 @@ load_dotenv()
 # Skip HuggingFace Hub metadata checks — model is already cached locally.
 # This avoids a network round-trip on every startup.
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
+# Suppress HuggingFace Hub progress bars ("Fetching 13 files..." noise).
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+# Suppress tqdm progress bars from transformers/mlx_vlm during model loading.
+os.environ.setdefault("TQDM_DISABLE", "1")
 
 # ---------------------------------------------------------------------------
 # Composed model configuration
@@ -86,6 +90,14 @@ HITL_SENSITIVE_ACTIONS = [
 HITL_APPROVAL_TIMEOUT = int(os.getenv("HITL_APPROVAL_TIMEOUT", "120"))
 # Maximum number of takeover attempts per task before giving up.
 HITL_MAX_TAKEOVER_ATTEMPTS = int(os.getenv("HITL_MAX_TAKEOVER_ATTEMPTS", "3"))
+
+# ---------------------------------------------------------------------------
+# Demonstration-guided skills
+# ---------------------------------------------------------------------------
+# Directory containing SKILL.md files (relative to project root).
+SKILL_LIBRARY_DIR = os.getenv("SKILL_LIBRARY_DIR", "skills")
+# Minimum composite score (0.0–1.0) for a skill to match a user prompt.
+SKILL_MATCH_THRESHOLD = float(os.getenv("SKILL_MATCH_THRESHOLD", "0.55"))
 
 # WebSocket settings
 WS_HEARTBEAT_INTERVAL = 30  # Seconds between keep-alive pings

@@ -8,9 +8,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from pathlib import Path
+
 from api.routes import router
 from api.websocket import manager
 from app_core import agent
+from app_core.config import SKILL_LIBRARY_DIR, TRAINING_TRAJECTORY_DIR
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -122,6 +125,128 @@ async def websocket_endpoint(websocket: WebSocket):
                     continue
                 agent.submit_hitl_response(payload)
 
+            elif msg_type == "skill_create":
+                # Convert a trajectory to a skill and reload the library.
+                from app_core.skills.converter import convert_trajectory_to_skill
+
+                tid = payload.get("trajectory_id", "")
+                name = payload.get("name", "")
+                desc = payload.get("description", "")
+                triggers = payload.get("trigger_phrases", [])
+                approval = payload.get("approval_required", False)
+
+                if not tid or not name:
+                    await websocket.send_text(
+                        json.dumps({"status": "error", "msg": "skill_create requires trajectory_id and name."})
+                    )
+                    continue
+
+                try:
+                    traj_dir = Path(TRAINING_TRAJECTORY_DIR) / tid
+                    convert_trajectory_to_skill(
+                        trajectory_dir=traj_dir,
+                        skill_name=name,
+                        description=desc,
+                        trigger_phrases=triggers,
+                        output_dir=Path(SKILL_LIBRARY_DIR),
+                        approval_required=approval,
+                    )
+                    count = agent.reload_skills()
+                    await manager.broadcast(
+                        "info",
+                        f"Skill '{name}' created ({count} skills loaded).",
+                    )
+                except Exception as e:
+                    await websocket.send_text(
+                        json.dumps({"status": "error", "msg": f"Skill creation failed: {e}"})
+                    )
+
+            # ---------------------------------------------------------------
+            # Teach mode — human demonstrates a task step-by-step
+            # ---------------------------------------------------------------
+            elif msg_type == "teach_start":
+                prompt = payload.get("content", "").strip()
+                if not prompt:
+                    await websocket.send_text(
+                        json.dumps({"status": "error", "msg": "teach_start requires content."})
+                    )
+                    continue
+                if not agent.is_ready():
+                    await websocket.send_text(
+                        json.dumps({"status": "error", "msg": "Agent not initialized."})
+                    )
+                    continue
+                agent.start_teach(prompt)
+                # Don't auto-screenshot — let user arrange their desktop first.
+                await manager.broadcast(
+                    "info",
+                    "Teach mode started. Arrange your screen, then take a screenshot when ready.",
+                    teach_active=True,
+                )
+
+            elif msg_type == "teach_screenshot":
+                # Manual screenshot request from the user.
+                if not agent.is_teaching():
+                    await websocket.send_text(
+                        json.dumps({"status": "error", "msg": "Not in teach mode."})
+                    )
+                    continue
+                screenshot = await agent.teach_screenshot()
+                extra = {"teach_active": True, "teach_step_count": len(agent.get_teach_steps())}
+                if screenshot:
+                    extra["screenshot"] = f"data:image/png;base64,{screenshot}"
+                await manager.broadcast("teach_screenshot", "Screenshot captured.", **extra)
+
+            elif msg_type == "teach_action":
+                if not agent.is_teaching():
+                    await websocket.send_text(
+                        json.dumps({"status": "error", "msg": "Not in teach mode."})
+                    )
+                    continue
+                screenshot = await agent.teach_action(payload)
+                step_count = len(agent.get_teach_steps())
+                extra = {"teach_step": payload, "teach_step_count": step_count, "teach_active": True}
+                if screenshot:
+                    extra["screenshot"] = f"data:image/png;base64,{screenshot}"
+                await manager.broadcast("teach_screenshot", f"Step {step_count} recorded.", **extra)
+
+            elif msg_type == "teach_done":
+                if not agent.is_teaching():
+                    await websocket.send_text(
+                        json.dumps({"status": "error", "msg": "Not in teach mode."})
+                    )
+                    continue
+                name = payload.get("name", "")
+                if not name:
+                    await websocket.send_text(
+                        json.dumps({"status": "error", "msg": "teach_done requires name."})
+                    )
+                    continue
+                triggers = payload.get("trigger_phrases", [agent.get_teach_prompt()])
+                approval = payload.get("approval_required", False)
+                desc = payload.get("description", agent.get_teach_prompt())
+                try:
+                    from app_core.skills.converter import build_skill_from_teach_steps
+                    build_skill_from_teach_steps(
+                        steps=agent.get_teach_steps(),
+                        skill_name=name,
+                        description=desc,
+                        trigger_phrases=triggers,
+                        output_dir=Path(SKILL_LIBRARY_DIR),
+                        approval_required=approval,
+                    )
+                    agent.cancel_teach()
+                    count = agent.reload_skills()
+                    await manager.broadcast("info", f"Skill '{name}' saved! ({count} skills loaded)", teach_active=False)
+                except Exception as e:
+                    await websocket.send_text(
+                        json.dumps({"status": "error", "msg": f"Skill save failed: {e}"})
+                    )
+
+            elif msg_type == "teach_cancel":
+                agent.cancel_teach()
+                await manager.broadcast("info", "Teach mode cancelled.", teach_active=False)
+
             elif msg_type == "reset":
                 agent.reset_history()
                 await manager.broadcast("info", "Conversation history cleared.")
@@ -140,4 +265,4 @@ async def websocket_endpoint(websocket: WebSocket):
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=5757, reload=True)

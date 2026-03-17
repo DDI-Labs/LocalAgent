@@ -1,14 +1,31 @@
-import { Activity, Cpu, Zap, ShieldX, Hand, GraduationCap } from "lucide-react";
+import { Activity, Zap, ShieldX, Hand, GraduationCap, Layers, Bolt, Eye, Puzzle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { ExecutionLayer } from "@/hooks/useAgentSocket";
 
 interface StatCardsProps {
   isConnected: boolean;
   currentTask: string;
   isHitlWaiting?: boolean;
   isTrainingMode?: boolean;
+  executionLayer?: ExecutionLayer;
 }
 
-export function StatCards({ isConnected, currentTask, isHitlWaiting = false, isTrainingMode = false }: StatCardsProps) {
+const layerConfig: Record<ExecutionLayer, { label: string; color: string; icon: typeof Zap }> = {
+  idle: { label: "Idle", color: "bg-text-secondary", icon: Layers },
+  macro: { label: "Macro", color: "bg-success", icon: Bolt },
+  adapter: { label: "Adapter", color: "bg-accent", icon: Puzzle },
+  skill: { label: "Skill", color: "bg-warning", icon: Layers },
+  vision: { label: "Vision", color: "bg-danger", icon: Eye },
+  error: { label: "Error", color: "bg-danger", icon: ShieldX },
+};
+
+export function StatCards({
+  isConnected,
+  currentTask,
+  isHitlWaiting = false,
+  isTrainingMode = false,
+  executionLayer = "idle",
+}: StatCardsProps) {
   const taskIcon = isHitlWaiting
     ? Hand
     : currentTask === "Blocked"
@@ -26,6 +43,8 @@ export function StatCards({ isConnected, currentTask, isHitlWaiting = false, isT
       ? "bg-blocked"
       : "bg-danger";
 
+  const layer = layerConfig[executionLayer];
+
   const cards = [
     {
       label: "Agent Status",
@@ -42,11 +61,11 @@ export function StatCards({ isConnected, currentTask, isHitlWaiting = false, isT
       dotColor: taskDotColor,
     },
     {
-      label: "System",
-      value: isTrainingMode ? "Training Mode" : "localhost:8000",
-      icon: isTrainingMode ? GraduationCap : Cpu,
+      label: "Execution Layer",
+      value: isTrainingMode ? "Training Mode" : layer.label,
+      icon: isTrainingMode ? GraduationCap : layer.icon,
       dot: true,
-      dotColor: isTrainingMode ? "bg-accent" : isConnected ? "bg-success" : "bg-danger",
+      dotColor: isTrainingMode ? "bg-accent" : layer.color,
     },
   ];
 

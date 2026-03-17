@@ -9,6 +9,10 @@ import {
   ShieldX,
   Info,
   Hand,
+  Bolt,
+  Puzzle,
+  Layers,
+  Eye,
 } from "lucide-react";
 import type { LogEntry } from "@/hooks/useAgentSocket";
 import { cn } from "@/lib/utils";
@@ -26,6 +30,7 @@ const statusColor: Record<string, string> = {
   blocked: "text-blocked",
   info: "text-text-secondary",
   waiting_for_human: "text-warning",
+  teach_screenshot: "text-success",
 };
 
 const statusIcon: Record<string, typeof Terminal> = {
@@ -36,7 +41,16 @@ const statusIcon: Record<string, typeof Terminal> = {
   blocked: ShieldX,
   info: Info,
   waiting_for_human: Hand,
+  teach_screenshot: Layers,
 };
+
+function getLayerIndicator(msg: string): { icon: typeof Terminal; color: string } | null {
+  if (msg.includes("fast-path") || msg.includes("macro")) return { icon: Bolt, color: "text-success" };
+  if (msg.includes("adapter:") || msg.includes("Adapter")) return { icon: Puzzle, color: "text-accent" };
+  if (msg.includes("Skill matched") || msg.includes("skill")) return { icon: Layers, color: "text-warning" };
+  if (msg.includes("vision") || msg.includes("Processing:")) return { icon: Eye, color: "text-danger" };
+  return null;
+}
 
 export function ProcessMonitor({ logs, onClear }: ProcessMonitorProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -77,11 +91,15 @@ export function ProcessMonitor({ logs, onClear }: ProcessMonitorProps) {
           logs.map((log) => {
             const Icon = statusIcon[log.status];
             const color = statusColor[log.status] ?? "text-text-secondary";
+            const layerHint = getLayerIndicator(log.msg);
             return (
               <div key={log.id} className="flex items-start gap-2">
                 <span className="shrink-0 text-text-secondary/50">
                   [{log.timestamp}]
                 </span>
+                {layerHint && (
+                  <layerHint.icon className={cn("h-3 w-3 shrink-0 mt-0.5", layerHint.color)} />
+                )}
                 <span
                   className={cn(
                     "flex shrink-0 items-center gap-1 font-medium uppercase",

@@ -1,18 +1,29 @@
 """HTTP API endpoints for the LocalAgent backend."""
 
 import asyncio
+from pathlib import Path
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 
 from api.websocket import manager
 from app_core import agent
+from app_core.config import SKILL_LIBRARY_DIR, TRAINING_TRAJECTORY_DIR
+from app_core.skills.converter import convert_trajectory_to_skill
 
 router = APIRouter()
 
 
 class PromptRequest(BaseModel):
     prompt: str
+
+
+class CreateSkillRequest(BaseModel):
+    trajectory_id: str
+    name: str
+    description: str
+    trigger_phrases: list[str]
+    approval_required: bool = False
 
 
 @router.get("/agent/status")
@@ -50,3 +61,46 @@ async def agent_reset():
     agent.reset_history()
     await manager.broadcast("info", "Conversation history cleared.")
     return {"result": "ok", "msg": "History reset."}
+
+
+# ---------------------------------------------------------------------------
+# Skill management endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/skills")
+async def list_skills():
+    """List all loaded skills with metadata."""
+    return {"skills": agent.get_skills_info()}
+
+
+@router.post("/skills/create")
+async def create_skill(req: CreateSkillRequest):
+    """Convert a trajectory into a SKILL.md and reload the library."""
+    trajectory_dir = Path(TRAINING_TRAJECTORY_DIR) / req.trajectory_id
+    if not trajectory_dir.is_dir():
+        return {"result": "error", "msg": f"Trajectory not found: {req.trajectory_id}"}
+
+    try:
+        output_path = convert_trajectory_to_skill(
+            trajectory_dir=trajectory_dir,
+            skill_name=req.name,
+            description=req.description,
+            trigger_phrases=req.trigger_phrases,
+            output_dir=Path(SKILL_LIBRARY_DIR),
+            approval_required=req.approval_required,
+        )
+        count = agent.reload_skills()
+        return {
+            "result": "ok",
+            "msg": f"Skill '{req.name}' created at {output_path}",
+            "skills_loaded": count,
+        }
+    except (FileNotFoundError, ValueError) as e:
+        return {"result": "error", "msg": str(e)}
+
+
+@router.post("/skills/reload")
+async def reload_skills():
+    """Hot-reload the skill library from disk."""
+    count = agent.reload_skills()
+    return {"result": "ok", "skills_loaded": count}

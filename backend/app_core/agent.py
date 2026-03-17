@@ -47,7 +47,11 @@ from app_core.config import (
     TRAINING_TRAJECTORY_SCREENSHOT_DIR,
     PII_SANITIZATION_ENABLED,
     OPENROUTER_API_KEY,
+    SKILL_LIBRARY_DIR,
+    SKILL_MATCH_THRESHOLD,
 )
+from app_core.skills import SkillLibrary
+from app_core.skills.compiler import compile_skill
 from app_core.callbacks import (
     HITLCallback,
     HITLRejectedError,
@@ -67,6 +71,14 @@ from app_core.macros import (
     open_app,
     try_app_action,
 )
+from app_core.runtime.task_state import TaskState
+from app_core.runtime.prompt_builder import PromptBuilder
+from app_core.runtime.metrics import RunMetrics
+from app_core.runtime.intent_router import IntentRouter, RouteResult
+from app_core.runtime.fallback_executor import VisionFallbackExecutor
+from app_core.runtime.observation import ObservationFusion
+from app_core.runtime.guards import ConfidenceGuard
+from app_core.adapters import BrowserAdapter, MediaAdapter, MacOSStateAdapter, BaseAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -135,8 +147,6 @@ _computer: Computer | None = None
 _agent: ComputerAgent | None = None
 _history: list[dict] = []
 _running = False
-# Track Spotlight flow for auto-Enter injection
-_spotlight_open = False
 # Callbacks that need per-task updates (set during initialize)
 _ws_status_cb: WebSocketStatusCallback | None = None
 _run_guard_cb: RunGuardCallback | None = None
@@ -150,6 +160,116 @@ _hitl_takeover_event = asyncio.Event()
 _hitl_takeover_response: dict | None = None
 _hitl_takeover_active = False
 
+# Skill library — loaded during initialize()
+_skill_library: SkillLibrary | None = None
+
+# Intent router and fallback executor — wired during initialize()
+_intent_router: IntentRouter | None = None
+_vision_fallback: VisionFallbackExecutor | None = None
+
+# Adapters — instantiated during initialize()
+_adapters: list[BaseAdapter] = []
+
+# Observation and guard modules
+_observation_fusion: ObservationFusion | None = None
+_confidence_guard: ConfidenceGuard | None = None
+
+# Skill preflight approval state — separate from takeover and action-level HITL.
+# Used for task-scoped approval of approval_required skills.
+_skill_approval_event = asyncio.Event()
+_skill_approval_response: dict | None = None
+_skill_approval_active = False
+
+# Teach mode state — human demonstrates a task step-by-step on live screenshots.
+_teach_active = False
+_teach_steps: list[dict] = []
+_teach_prompt: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Teach mode public API (called from WebSocket handler)
+# ---------------------------------------------------------------------------
+
+async def teach_screenshot() -> str | None:
+    """Take a screenshot and return base64. No model involved."""
+    if _computer is None:
+        return None
+    try:
+        raw = await _computer.interface.screenshot()
+        return base64.b64encode(raw).decode("utf-8")
+    except Exception as e:
+        logger.warning(f"Teach screenshot failed: {e}")
+        return None
+
+
+async def teach_action(payload: dict) -> str | None:
+    """Execute a single action and return a new screenshot.
+
+    The payload uses ``action`` for the action type (since ``type`` is the
+    WebSocket message type).  The recorded step normalises this to ``type``
+    for compatibility with the skill converter.
+
+    No model calls — the human is the planner.
+    """
+    global _teach_steps
+    if _computer is None:
+        return None
+
+    action_type = payload.get("action", "") or payload.get("type", "")
+    try:
+        if action_type == "click":
+            await _computer.interface.left_click(payload["x"], payload["y"])
+        elif action_type == "type":
+            await _computer.interface.type_text(payload.get("text", ""))
+        elif action_type == "keypress":
+            keys = payload.get("keys", [])
+            if len(keys) > 1:
+                await _computer.interface.hotkey(*keys)
+            elif len(keys) == 1:
+                await _computer.interface.press_key(keys[0])
+        elif action_type == "wait":
+            await asyncio.sleep(1.5)
+    except Exception as e:
+        logger.warning(f"Teach action failed: {e}")
+        return None
+
+    # Normalise step for the converter: use "type" as the action key
+    step = {k: v for k, v in payload.items() if k not in ("type", "action")}
+    step["type"] = action_type
+    _teach_steps.append(step)
+    logger.info("Teach step %d: %s", len(_teach_steps), step)
+    return await teach_screenshot()
+
+
+def start_teach(prompt: str) -> None:
+    """Enter teach mode with the given prompt as the intended task."""
+    global _teach_active, _teach_steps, _teach_prompt
+    _teach_active = True
+    _teach_steps = []
+    _teach_prompt = prompt
+    logger.info("Teach mode started — prompt: %s", prompt)
+
+
+def cancel_teach() -> None:
+    """Exit teach mode without saving."""
+    global _teach_active, _teach_steps, _teach_prompt
+    _teach_active = False
+    _teach_steps = []
+    _teach_prompt = ""
+    logger.info("Teach mode cancelled.")
+
+
+def is_teaching() -> bool:
+    return _teach_active
+
+
+def get_teach_steps() -> list[dict]:
+    return list(_teach_steps)
+
+
+def get_teach_prompt() -> str:
+    return _teach_prompt
+
 
 # ---------------------------------------------------------------------------
 # HITL public API (called from WebSocket handler)
@@ -160,8 +280,9 @@ def submit_hitl_response(response: dict) -> None:
 
     For *approval* requests the HITLCallback itself holds the asyncio.Event.
     For *takeover* requests the module-level event is used.
+    For *skill_approval* requests the skill preflight event is used.
     """
-    global _hitl_takeover_response
+    global _hitl_takeover_response, _skill_approval_response
 
     mode = response.get("mode", "")
 
@@ -174,6 +295,11 @@ def submit_hitl_response(response: dict) -> None:
         _hitl_takeover_event.set()
         return
 
+    if mode == "skill_approval" and _skill_approval_active:
+        _skill_approval_response = response
+        _skill_approval_event.set()
+        return
+
     # Cancel — stop any pending HITL
     if mode == "cancel":
         if _hitl_cb is not None and _hitl_cb.is_waiting:
@@ -181,6 +307,9 @@ def submit_hitl_response(response: dict) -> None:
         if _hitl_takeover_active:
             _hitl_takeover_response = {"action": "cancel"}
             _hitl_takeover_event.set()
+        if _skill_approval_active:
+            _skill_approval_response = {"approved": False, "reason": "cancelled"}
+            _skill_approval_event.set()
         return
 
     logger.warning("HITL response received but no handler waiting: %s", response)
@@ -191,6 +320,7 @@ def is_hitl_waiting() -> bool:
     return (
         (_hitl_cb is not None and _hitl_cb.is_waiting)
         or _hitl_takeover_active
+        or _skill_approval_active
     )
 
 
@@ -200,6 +330,8 @@ def get_hitl_state() -> dict | None:
         return _hitl_cb.pending_request
     if _hitl_takeover_active:
         return {"mode": "takeover"}
+    if _skill_approval_active:
+        return {"mode": "skill_approval"}
     return None
 
 
@@ -242,7 +374,7 @@ def is_training_mode() -> bool:
 
 async def initialize():
     """Connect to the Cua computer server and create the composed agent."""
-    global _computer, _agent, _ws_status_cb, _run_guard_cb, _pii_cb, _hitl_cb, _trajectory_cb
+    global _computer, _agent, _ws_status_cb, _run_guard_cb, _pii_cb, _hitl_cb, _trajectory_cb, _skill_library, _intent_router, _vision_fallback, _adapters, _observation_fusion, _confidence_guard
 
     import os
 
@@ -317,12 +449,39 @@ async def initialize():
         instructions=MACOS_INSTRUCTIONS,
         use_prompt_caching=True,
     )
+
+    # Load the skill library
+    _skill_library = SkillLibrary(Path(SKILL_LIBRARY_DIR), SKILL_MATCH_THRESHOLD)
+    _skill_library.load()
+
+    # Set up the vision fallback executor
+    _vision_fallback = VisionFallbackExecutor(_agent, _computer)
+
+    # Initialize adapters
+    _adapters = [
+        BrowserAdapter(),
+        MediaAdapter(),
+        MacOSStateAdapter(),
+    ]
+
+    # Initialize observation fusion and confidence guards
+    _observation_fusion = ObservationFusion(adapters=_adapters)
+    _confidence_guard = ConfidenceGuard()
+
+    # Set up the intent router with ordered strategies
+    _intent_router = IntentRouter()
+    _intent_router.register("macro", _route_macro)
+    _intent_router.register("adapter", _route_adapter)
+    _intent_router.register("skill", _route_skill)
+
     logger.info(
         f"ComputerAgent initialized — model={CUA_MODEL}, "
         f"hitl={HITL_ENABLED}, "
         f"pii_sanitization={PII_SANITIZATION_ENABLED}, "
         f"image_retention={IMAGE_RETENTION_COUNT}, "
-        f"callbacks={len(callbacks)}"
+        f"skills={len(_skill_library.skills)}, "
+        f"callbacks={len(callbacks)}, "
+        f"router_strategies={_intent_router.strategy_names}"
     )
 
 
@@ -366,12 +525,18 @@ def is_busy() -> bool:
 # HITL takeover helper
 # ---------------------------------------------------------------------------
 
-async def _handle_takeover(broadcast: StatusCallback | None) -> bool:
+async def _handle_takeover(
+    broadcast: StatusCallback | None,
+    history: list[dict],
+) -> bool:
     """Pause the task for a human takeover click.
 
     Takes a fresh screenshot, broadcasts a ``waiting_for_human`` message, and
     waits for the user to click on the screenshot.  Executes the click via the
-    Computer tool and injects the result into history.
+    Computer tool and injects the result into the provided *history* list.
+
+    The caller passes the run-local history so that takeover data does not
+    leak into the persistent ``_history``.
 
     Returns True if the takeover succeeded and the agent loop should resume,
     False if the user cancelled or it timed out.
@@ -440,13 +605,13 @@ async def _handle_takeover(broadcast: StatusCallback | None) -> bool:
         _send("error", f"Takeover click failed: {e}")
         return False
 
-    # Inject the manual click + fresh screenshot into history
+    # Inject the manual click + fresh screenshot into the run-local history
     seed_items = await _take_seeded_screenshot()
     if seed_items:
-        _history.extend(seed_items)
+        history.extend(seed_items)
 
     # Also inject a note so the planning model knows a human helped
-    _history.append({
+    history.append({
         "role": "user",
         "content": (
             "A human operator just clicked at the correct location for you. "
@@ -459,32 +624,191 @@ async def _handle_takeover(broadcast: StatusCallback | None) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Skill preflight approval
+# ---------------------------------------------------------------------------
+
+async def _preflight_skill_approval(
+    skill,
+    broadcast: StatusCallback | None,
+) -> bool:
+    """Ask the user to approve an ``approval_required`` skill before execution.
+
+    This is a *task-scoped* gate — it fires once before any actions run,
+    unlike the action-scoped HITLCallback which fires per-action.
+
+    Returns True if approved, False if rejected or timed out.
+    """
+    global _skill_approval_active, _skill_approval_response
+
+    _skill_approval_event.clear()
+    _skill_approval_response = None
+    _skill_approval_active = True
+
+    steps_preview = "\n".join(
+        f"Step {s.index}: {s.description}" for s in skill.steps[:5]
+    )
+
+    if broadcast:
+        broadcast(
+            "waiting_for_human",
+            f"Skill '{skill.name}' requires approval before executing.",
+            hitl={
+                "mode": "skill_approval",
+                "action_description": f"Execute skill: {skill.name}\n{skill.description}",
+                "matched_keyword": "skill_approval",
+                "reasoning": steps_preview,
+            },
+        )
+    logger.info("Skill preflight approval: waiting for user — %s", skill.name)
+
+    try:
+        await asyncio.wait_for(
+            _skill_approval_event.wait(), timeout=HITL_APPROVAL_TIMEOUT
+        )
+    except asyncio.TimeoutError:
+        _skill_approval_active = False
+        logger.warning("Skill preflight approval timed out for: %s", skill.name)
+        if broadcast:
+            broadcast("info", f"Skill approval timed out — skipping: {skill.name}")
+        return False
+    finally:
+        _skill_approval_active = False
+
+    return bool(_skill_approval_response and _skill_approval_response.get("approved"))
+
+
+# ---------------------------------------------------------------------------
+# Routing strategies (registered in initialize())
+# ---------------------------------------------------------------------------
+
+async def _route_macro(state: TaskState) -> RouteResult:
+    """Try to handle the task via AppleScript macros."""
+    stripped = state.original_prompt.strip()
+
+    # Compound: "open Spotify and play some music"
+    compound = OPEN_APP_THEN_PATTERN.match(stripped)
+    if compound:
+        app_name = compound.group(1).strip().strip("'\"")
+        remaining_task = compound.group(2).strip()
+        state.current_app = app_name
+        state.remaining_task = remaining_task
+
+        if await open_app(app_name):
+            state.app_opened_by_macro = True
+            result = await try_app_action(app_name, remaining_task)
+            if result:
+                return RouteResult(
+                    handled=True,
+                    execution_layer="macro",
+                    final_outcome=f"Opened {app_name} and {result.lower()}.",
+                )
+            # Macro opened app but couldn't handle the remaining task
+            state.seed_items = await _take_seeded_screenshot()
+            state.skill_query = remaining_task
+            state.effective_prompt = (
+                f"{app_name} is already open and in the foreground. "
+                f"You can see it in the screenshot above. "
+                f"Do NOT open {app_name} again. Do NOT use Spotlight. "
+                f"Do NOT use Command+Tab. Do NOT click the Dock. "
+                f"The current screen IS {app_name} — proceed directly with the task. "
+                f"To search in {app_name}, click the search icon or search bar "
+                f"inside the {app_name} window first, then type your query. "
+                f"Do NOT type into any other field. "
+                f"Task: {remaining_task}"
+            )
+            return RouteResult(handled=False, execution_layer="macro_partial")
+
+    # Simple: "open Spotify"
+    if OPEN_APP_PATTERN.match(stripped):
+        app_name = OPEN_APP_PATTERN.match(stripped).group(1).strip().strip("'\"")
+        state.current_app = app_name
+        if await open_app(app_name):
+            return RouteResult(
+                handled=True,
+                execution_layer="macro",
+                final_outcome=f"Opened {app_name} via fast-path.",
+            )
+
+    return RouteResult(handled=False)
+
+
+async def _route_adapter(state: TaskState) -> RouteResult:
+    """Try to handle the task via a structured adapter."""
+    for adapter in _adapters:
+        if adapter.can_handle(state.effective_prompt):
+            logger.info("Adapter '%s' can handle: %s", adapter.name, state.effective_prompt[:60])
+            result = await adapter.execute(state.effective_prompt)
+            if result.success:
+                return RouteResult(
+                    handled=True,
+                    execution_layer=f"adapter:{adapter.name}",
+                    final_outcome=result.message,
+                )
+            logger.info("Adapter '%s' attempted but failed: %s", adapter.name, result.message)
+    return RouteResult(handled=False)
+
+
+async def _route_skill(state: TaskState) -> RouteResult:
+    """Try to match and set up a skill for execution."""
+    if _skill_library is None:
+        return RouteResult(handled=False)
+
+    match_result = _skill_library.match(state.skill_query)
+    if not match_result and state.skill_query != state.original_prompt:
+        match_result = _skill_library.match(state.original_prompt)
+
+    if not match_result:
+        return RouteResult(handled=False)
+
+    state.matched_skill, state.skill_score = match_result
+    state.compiled_skill = _skill_library.get_compiled(state.matched_skill.name)
+    if state.compiled_skill is None:
+        state.compiled_skill = compile_skill(state.matched_skill)
+
+    # Skill found but still needs to go through the vision loop with guidance.
+    # The skill context is now on state for prompt_builder to use.
+    return RouteResult(
+        handled=False,
+        execution_layer="skill",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Main task runner
 # ---------------------------------------------------------------------------
 
 async def run_agent_task(prompt: str, broadcast: StatusCallback | None = None):
     """Run a natural language task through the composed ComputerAgent.
 
-    Maintains conversation history for multi-turn context.
-    Streams status updates via the broadcast callback.
+    Execution priority (via IntentRouter):
+      macro → adapter → compiled skill → vision/planner fallback.
 
-    When HITL is enabled and the agent gets stuck (consecutive waits), the
-    system enters takeover mode instead of erroring — allowing the user to
-    perform a manual click and resume.
+    Uses a run-scoped ``TaskState`` so that skill preambles, transient
+    screenshots, and takeover notes do not contaminate the persistent
+    ``_history``.  Only the original user prompt and a concise final
+    outcome are persisted after the run completes.
     """
-    global _running, _spotlight_open
+    global _running
 
     if not is_ready():
         raise RuntimeError("Agent not initialized. Call initialize() first.")
     if _running:
         raise RuntimeError("Agent is already processing a task.")
 
+    state = TaskState(original_prompt=prompt, effective_prompt=prompt, skill_query=prompt)
+    metrics = RunMetrics()
+
     def _send(status: str, msg: str, **extra):
         if broadcast:
             broadcast(status, msg, **extra)
 
     _running = True
-    _spotlight_open = False
+
+    # Reset per-task modules
+    if _observation_fusion is not None:
+        _observation_fusion.reset()
+    if _confidence_guard is not None:
+        _confidence_guard.reset()
 
     # Wire per-task broadcast into callbacks
     if _ws_status_cb is not None:
@@ -495,184 +819,132 @@ async def run_agent_task(prompt: str, broadcast: StatusCallback | None = None):
         _hitl_cb.set_broadcast(broadcast)
 
     try:
-        # --- Fast-path: open apps via osascript instead of the vision loop ---
-        stripped = prompt.strip()
-        seed_items: list[dict] = []  # populated by fast-path if app opened
+        metrics.total.start()
 
-        # 1) Compound: "open Spotify and play some music"
-        compound = OPEN_APP_THEN_PATTERN.match(stripped)
-        if compound:
-            app_name = compound.group(1).strip().strip("'\"")
-            remaining_task = compound.group(2).strip()
-            _send("thinking", f"Opening {app_name} directly...")
-            if await open_app(app_name):
-                _send("action", f"Opened {app_name} (fast-path)")
-                result = await try_app_action(app_name, remaining_task)
-                if result:
-                    _send("done", f"Opened {app_name} and {result.lower()}.")
-                    _history.append({"role": "user", "content": prompt})
-                    _history.append({
-                        "role": "assistant",
-                        "content": f"Opened {app_name} and {result.lower()}.",
-                    })
+        # --- Route through intent router ---
+        with metrics.macro.measure():
+            route = await _intent_router.route(state) if _intent_router else RouteResult()
+
+        if route.handled:
+            state.execution_layer = route.execution_layer
+            state.final_outcome = route.final_outcome or "Task complete."
+            _send("done", state.final_outcome)
+            _history.append(state.history_summary())
+            _history.append(state.outcome_summary())
+            metrics.total.stop()
+            metrics.log_summary()
+            return
+
+        # --- Skill preflight approval (if router resolved a skill match) ---
+        if state.matched_skill:
+            _send("info", f"Skill matched: {state.matched_skill.name} (score={state.skill_score:.2f})")
+            if state.matched_skill.approval_required and HITL_ENABLED:
+                approved = await _preflight_skill_approval(state.matched_skill, broadcast)
+                if not approved:
+                    state.final_outcome = f"Skill '{state.matched_skill.name}' rejected by user."
+                    _send("blocked", state.final_outcome)
+                    _history.append(state.history_summary())
+                    _history.append(state.outcome_summary())
+                    metrics.total.stop()
+                    metrics.log_summary()
                     return
-                # No macro matched — tell model the app is already open.
-                # Seed a fresh screenshot so the composed loop won't take
-                # its own (which may still show the previous app).
-                seed_items = await _take_seeded_screenshot()
 
-                prompt = (
-                    f"{app_name} is already open and in the foreground. "
-                    f"You can see it in the screenshot above. "
-                    f"Do NOT open {app_name} again. Do NOT use Spotlight. "
-                    f"Do NOT use Command+Tab. Do NOT click the Dock. "
-                    f"The current screen IS {app_name} — proceed directly with the task. "
-                    f"To search in {app_name}, click the search icon or search bar "
-                    f"inside the {app_name} window first, then type your query. "
-                    f"Do NOT type into any other field. "
-                    f"Task: {remaining_task}"
-                )
-                logger.info(f"Fast-path opened '{app_name}', agent gets: {prompt}")
-            else:
-                logger.info(f"Fast-path failed for '{app_name}', agent gets full prompt.")
+        # --- Build prompt via centralized builder ---
+        state.execution_layer = route.execution_layer or ("skill" if state.matched_skill else "vision")
+        enhanced_prompt = PromptBuilder.build(state)
 
-        # 2) Simple: "open Spotify" (no further instructions)
-        elif OPEN_APP_PATTERN.match(stripped):
-            app_name = OPEN_APP_PATTERN.match(stripped).group(1).strip().strip("'\"")
-            _send("thinking", f"Opening {app_name} directly...")
-            if await open_app(app_name):
-                _send("done", f"Opened {app_name}.")
-                _history.append({"role": "user", "content": prompt})
-                _history.append({
-                    "role": "assistant",
-                    "content": f"Opened {app_name} via fast-path.",
-                })
-                return
-            logger.info(f"Fast-path failed for '{app_name}', falling back to agent.")
+        # --- Run-local history (does NOT pollute persistent _history) ---
+        state.run_history = list(_history)
+        state.run_history.append({"role": "user", "content": enhanced_prompt})
 
-        # Inline instructions for models that ignore the instructions param
-        enhanced_prompt = f"{MACOS_INSTRUCTIONS}\n\nTask: {prompt}"
-        _history.append({"role": "user", "content": enhanced_prompt})
+        if state.seed_items:
+            state.run_history.extend(state.seed_items)
+            logger.info("Seeded post-activation screenshot into run_history")
 
-        # If the fast-path seeded a screenshot, inject it into history so the
-        # composed loop sees an existing image and doesn't take a stale one.
-        if seed_items:
-            _history.extend(seed_items)
-            logger.info("Seeded post-activation screenshot into history")
+        _send("thinking", f"Processing: {state.effective_prompt[:80]}...")
 
-        _send("thinking", f"Processing: {prompt[:80]}...")
+        # --- Vision/planner fallback loop ---
+        await _vision_fallback.run(
+            state,
+            broadcast=broadcast,
+            open_app_fn=open_app,
+            auto_enter_fn=auto_enter_after_type,
+            run_guard_cb=_run_guard_cb,
+            handle_takeover_fn=_handle_takeover,
+            hitl_enabled=HITL_ENABLED,
+            max_takeover=HITL_MAX_TAKEOVER_ATTEMPTS,
+        )
 
-        # ----- Agent loop with HITL takeover support -----
-        takeover_attempts = 0
-
-        while True:
-            async for result in _agent.run(_history):
-                for item in result.get("output", []):
-                    msg_type = item.get("type", "")
-                    if msg_type == "message":
-                        content_blocks = item.get("content", [])
-                        for block in content_blocks:
-                            if block.get("type") == "text":
-                                text = block["text"]
-                                _send("action", text)
-                                _history.append({"role": "assistant", "content": text})
-                    elif msg_type == "computer_call":
-                        action = item.get("action", {})
-                        action_type = action.get("type", "unknown")
-
-                        # Track Spotlight flow
-                        if action_type == "keypress":
-                            keys = action.get("keys", [])
-                            if set(keys) == {"command", "space"} or set(keys) == {"cmd", "space"}:
-                                _spotlight_open = True
-                                logger.info("Detected Spotlight open")
-                        elif action_type == "type" and _spotlight_open:
-                            app_name = action.get("content", "") or action.get("text", "")
-                            if app_name and await open_app(app_name):
-                                logger.info(f"Fast-path: opened '{app_name}' via osascript")
-                                _send("action", f"Opened {app_name} (fast-path)")
-                            else:
-                                logger.info("Falling back to auto-Enter after Spotlight type")
-                                await auto_enter_after_type(_computer)
-                            _spotlight_open = False
-
-            # --- Post-loop: check why the agent stopped ---
-            if not (_run_guard_cb and _run_guard_cb.halt_reason):
-                # Normal completion
-                _send("done", "Task complete.")
-                break
-
-            halt = _run_guard_cb.halt_reason
-
-            # Check if HITL takeover should kick in (stuck on consecutive waits)
-            if (
-                HITL_ENABLED
-                and "consecutive wait" in halt
-                and takeover_attempts < HITL_MAX_TAKEOVER_ATTEMPTS
-            ):
-                takeover_attempts += 1
-                logger.info(
-                    "HITL takeover triggered (attempt %d/%d): %s",
-                    takeover_attempts, HITL_MAX_TAKEOVER_ATTEMPTS, halt,
-                )
-                if await _handle_takeover(broadcast):
-                    # User performed a click — resume the agent loop
-                    continue
-                else:
-                    # User cancelled or timed out — stop the task
-                    _send("error", f"Task stopped: {halt}")
-                    _history.append({
-                        "role": "assistant",
-                        "content": halt,
-                    })
-                    break
-            else:
-                # HITL disabled or max attempts exceeded — error as before
-                _send("error", halt)
-                _history.append({
-                    "role": "assistant",
-                    "content": halt,
-                })
-                break
+        # --- Persist only concise summary to _history ---
+        _history.append(state.history_summary())
+        _history.append(state.outcome_summary())
 
     except HITLRejectedError as e:
-        logger.info(f"Action rejected via HITL: {e}")
+        logger.info("Action rejected via HITL: %s", e)
+        state.final_outcome = f"Action rejected by user: {e}"
         _send("blocked", f"Action rejected: {e}")
-        _history.append({
-            "role": "assistant",
-            "content": f"Action rejected by user: {e}",
-        })
+        _history.append(state.history_summary())
+        _history.append(state.outcome_summary())
     except SecurityBlockedError as e:
-        logger.warning(f"Action blocked by security policy: {e}")
+        logger.warning("Action blocked by security policy: %s", e)
+        state.final_outcome = f"Action blocked by security policy: {e}"
         _send("blocked", f"Security policy blocked an action: {e}")
-        _history.append({
-            "role": "assistant",
-            "content": f"Action blocked by security policy: {e}",
-        })
+        _history.append(state.history_summary())
+        _history.append(state.outcome_summary())
     except Exception as e:
         logger.exception("Agent task failed")
         _send("error", f"Agent error: {e}")
     finally:
         _running = False
+        metrics.total.stop()
+        metrics.log_summary()
+        logger.info("Task state: %s", state.to_log_dict())
         if _ws_status_cb is not None:
             _ws_status_cb.set_broadcast(None)
         if _pii_cb is not None:
             _pii_cb.set_broadcast(None)
         if _hitl_cb is not None:
             _hitl_cb.set_broadcast(None)
-        # Reclaim memory between turns — the grounding model allocates large
-        # tensors that Python's refcount GC may not collect promptly.
         gc.collect()
 
 
 def reset_history():
     """Clear the conversation history for a fresh start."""
-    global _history
+    global _history, _skill_approval_response
     _history = []
     # Cancel any pending HITL requests
     if _hitl_cb is not None:
         _hitl_cb.cancel()
+    if _skill_approval_active:
+        _skill_approval_response = {"approved": False, "reason": "reset"}
+        _skill_approval_event.set()
     logger.info("Agent conversation history reset.")
+
+
+def reload_skills() -> int:
+    """Hot-reload the skill library from disk. Returns the number of loaded skills."""
+    if _skill_library is not None:
+        _skill_library.reload()
+        logger.info("Skill library reloaded: %d skills", len(_skill_library.skills))
+        return len(_skill_library.skills)
+    return 0
+
+
+def get_skills_info() -> list[dict]:
+    """Return metadata for all loaded skills."""
+    if _skill_library is None:
+        return []
+    return [
+        {
+            "name": s.name,
+            "description": s.description,
+            "trigger_phrases": s.trigger_phrases,
+            "approval_required": s.approval_required,
+            "steps": len(s.steps),
+            "file": str(s.file_path),
+        }
+        for s in _skill_library.skills
+    ]
 
 
 async def check_services() -> dict:

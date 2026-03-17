@@ -4,6 +4,8 @@ import { ChatInput } from "@/components/ChatInput";
 import { ProcessMonitor } from "@/components/ProcessMonitor";
 import { ScreenshotViewer } from "@/components/ScreenshotViewer";
 import { HITLOverlay } from "@/components/HITLOverlay";
+import { TeachBar } from "@/components/TeachBar";
+import { TeachSaveDialog } from "@/components/TeachSaveDialog";
 import { useAgentSocket } from "@/hooks/useAgentSocket";
 
 function App() {
@@ -26,6 +28,21 @@ function App() {
     enterCorrectionMode,
     sendHitlCorrection,
     toggleTrainingMode,
+    executionLayer,
+    // Teach mode
+    isTeachMode,
+    teachSteps,
+    teachPrompt,
+    showTeachSave,
+    startTeach,
+    sendTeachScreenshot,
+    sendTeachClick,
+    sendTeachType,
+    sendTeachKeypress,
+    sendTeachWait,
+    finishTeach,
+    saveTeachSkill,
+    cancelTeach,
   } = useAgentSocket();
 
   const isTakeover = hitlRequest?.mode === "takeover";
@@ -43,13 +60,18 @@ function App() {
             currentTask={currentTask}
             isHitlWaiting={hitlRequest != null}
             isTrainingMode={isTrainingMode}
+            executionLayer={executionLayer}
           />
 
           {/* Agent chat input */}
           <ChatInput
             isLoading={isAgentBusy}
             isTrainingMode={isTrainingMode}
+            isTeachMode={isTeachMode}
+            teachPrompt={teachPrompt}
             onSend={sendPrompt}
+            onTeach={startTeach}
+            onCancelTeach={cancelTeach}
             onReset={resetHistory}
             onToggleTraining={toggleTrainingMode}
           />
@@ -71,6 +93,7 @@ function App() {
           <ScreenshotViewer
             data={latestScreenshot}
             takeoverMode={isClickable}
+            teachMode={isTeachMode && latestScreenshot != null}
             onTakeoverClick={
               isTakeover
                 ? sendHitlClick
@@ -78,8 +101,33 @@ function App() {
                   ? sendHitlCorrection
                   : undefined
             }
+            onTeachClick={isTeachMode ? sendTeachClick : undefined}
             proposedClick={hitlRequest?.proposed_click}
           />
+
+          {/* Teach toolbar — shown during teach mode below the screenshot */}
+          {isTeachMode && (
+            <TeachBar
+              steps={teachSteps}
+              hasScreenshot={latestScreenshot != null}
+              onScreenshot={sendTeachScreenshot}
+              onType={sendTeachType}
+              onKeypress={sendTeachKeypress}
+              onWait={sendTeachWait}
+              onDone={finishTeach}
+              onCancel={cancelTeach}
+            />
+          )}
+
+          {/* Teach save dialog */}
+          {showTeachSave && (
+            <TeachSaveDialog
+              prompt={teachPrompt}
+              steps={teachSteps}
+              onSave={saveTeachSkill}
+              onCancel={cancelTeach}
+            />
+          )}
 
           {/* Process monitor — agent reasoning + actions */}
           <ProcessMonitor logs={logs} onClear={clearLogs} />

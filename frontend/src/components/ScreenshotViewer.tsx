@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from "react";
-import { Monitor, ZoomIn, ZoomOut, Crosshair, MousePointerClick, Target } from "lucide-react";
+import { Monitor, ZoomIn, ZoomOut, Crosshair, MousePointerClick, Target, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ScreenshotData } from "@/hooks/useAgentSocket";
 
@@ -7,8 +7,12 @@ interface ScreenshotViewerProps {
   data: ScreenshotData | null;
   /** When true the image is clickable (HITL takeover or correction mode). */
   takeoverMode?: boolean;
+  /** When true the image is clickable for teach-mode step recording. */
+  teachMode?: boolean;
   /** Called with (x, y) in natural image coordinates when the user clicks in takeover mode. */
   onTakeoverClick?: (x: number, y: number) => void;
+  /** Called with (x, y) in natural image coordinates when the user clicks in teach mode. */
+  onTeachClick?: (x: number, y: number) => void;
   /** Proposed click from the agent (training mode) — shown as an accent-colored dot. */
   proposedClick?: { x: number; y: number };
 }
@@ -16,7 +20,9 @@ interface ScreenshotViewerProps {
 export function ScreenshotViewer({
   data,
   takeoverMode = false,
+  teachMode = false,
   onTakeoverClick,
+  onTeachClick,
   proposedClick,
 }: ScreenshotViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -55,22 +61,28 @@ export function ScreenshotViewer({
     [],
   );
 
+  const isClickable = takeoverMode || teachMode;
+
   const handleImageClick = useCallback(
     (e: React.MouseEvent<HTMLImageElement>) => {
-      if (!takeoverMode || !onTakeoverClick) return;
       const coords = toNaturalCoords(e);
-      if (coords) onTakeoverClick(coords.x, coords.y);
+      if (!coords) return;
+      if (takeoverMode && onTakeoverClick) {
+        onTakeoverClick(coords.x, coords.y);
+      } else if (teachMode && onTeachClick) {
+        onTeachClick(coords.x, coords.y);
+      }
     },
-    [takeoverMode, onTakeoverClick, toNaturalCoords],
+    [takeoverMode, teachMode, onTakeoverClick, onTeachClick, toNaturalCoords],
   );
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLImageElement>) => {
-      if (!takeoverMode) return;
+      if (!isClickable) return;
       const coords = toNaturalCoords(e);
       setHoverCoords(coords);
     },
-    [takeoverMode, toNaturalCoords],
+    [isClickable, toNaturalCoords],
   );
 
   const handleMouseLeave = useCallback(() => setHoverCoords(null), []);
@@ -97,7 +109,9 @@ export function ScreenshotViewer({
         "flex flex-col rounded-xl border bg-bg-card",
         takeoverMode
           ? "border-2 border-warning/60 shadow-lg shadow-warning/10"
-          : "border-border",
+          : teachMode
+            ? "border-2 border-success/60 shadow-lg shadow-success/10"
+            : "border-border",
       )}
     >
       {/* Header */}
@@ -110,6 +124,12 @@ export function ScreenshotViewer({
           <span className="rounded-full bg-bg-secondary px-2 py-0.5 text-xs text-text-secondary">
             {data.timestamp}
           </span>
+          {teachMode && (
+            <span className="flex items-center gap-1 rounded-full bg-success/20 px-2 py-0.5 text-xs font-medium text-success">
+              <BookOpen className="h-3 w-3" />
+              Click to record step
+            </span>
+          )}
           {takeoverMode && (
             <span className="flex animate-pulse-dot items-center gap-1 rounded-full bg-warning/20 px-2 py-0.5 text-xs font-medium text-warning">
               <MousePointerClick className="h-3 w-3" />
@@ -128,7 +148,7 @@ export function ScreenshotViewer({
               Proposed ({proposedClick.x}, {proposedClick.y})
             </span>
           )}
-          {takeoverMode && hoverCoords && (
+          {isClickable && hoverCoords && (
             <span className="font-mono text-xs text-text-secondary">
               ({hoverCoords.x}, {hoverCoords.y})
             </span>
@@ -156,7 +176,7 @@ export function ScreenshotViewer({
             alt="Agent screenshot"
             className={cn(
               zoom ? "w-auto max-w-none" : "w-full",
-              takeoverMode && "cursor-crosshair",
+              isClickable && "cursor-crosshair",
             )}
             draggable={false}
             onClick={handleImageClick}
@@ -204,8 +224,8 @@ export function ScreenshotViewer({
             </div>
           )}
 
-          {/* Takeover hover crosshair */}
-          {takeoverMode && hoverCoords && imgNatural.w > 1 && (
+          {/* Interactive hover crosshair (takeover or teach) */}
+          {isClickable && hoverCoords && imgNatural.w > 1 && (
             <div
               className="pointer-events-none absolute"
               style={{
@@ -214,9 +234,20 @@ export function ScreenshotViewer({
                 transform: "translate(-50%, -50%)",
               }}
             >
-              <div className="h-4 w-4 rounded-full border-2 border-warning bg-warning/30 shadow-lg shadow-warning/50" />
-              <div className="absolute left-1/2 top-1/2 h-8 w-px -translate-x-1/2 -translate-y-1/2 bg-warning/60" />
-              <div className="absolute left-1/2 top-1/2 h-px w-8 -translate-x-1/2 -translate-y-1/2 bg-warning/60" />
+              <div className={cn(
+                "h-4 w-4 rounded-full border-2 shadow-lg",
+                teachMode
+                  ? "border-success bg-success/30 shadow-success/50"
+                  : "border-warning bg-warning/30 shadow-warning/50",
+              )} />
+              <div className={cn(
+                "absolute left-1/2 top-1/2 h-8 w-px -translate-x-1/2 -translate-y-1/2",
+                teachMode ? "bg-success/60" : "bg-warning/60",
+              )} />
+              <div className={cn(
+                "absolute left-1/2 top-1/2 h-px w-8 -translate-x-1/2 -translate-y-1/2",
+                teachMode ? "bg-success/60" : "bg-warning/60",
+              )} />
             </div>
           )}
         </div>

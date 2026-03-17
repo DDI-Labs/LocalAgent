@@ -1,0 +1,23 @@
+{
+  "item": {
+    "type": "computer_call",
+    "call_id": "toolu_bdrk_018bXwAM37p8XoqLFML9M5Zu",
+    "action": {
+      "text": "bohemian rhapsody",
+      "type": "type"
+    },
+    "status": "completed"
+  },
+  "result": [
+    {
+      "type": "computer_call_output",
+      "call_id": "toolu_bdrk_018bXwAM37p8XoqLFML9M5Zu",
+      "acknowledged_safety_checks": [],
+      "output": {
+        "type": "input_image",
+        "image_url": "[omitted]"
+      }
+    }
+  ],
+  "created_at": "139929666844775950"
+}
