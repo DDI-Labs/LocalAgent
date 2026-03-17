@@ -77,7 +77,18 @@ async def main():
             if hasattr(result, "text"):
                 print(f"[Agent] {result.text}")
             else:
-                print(f"[Step] {result}")
+                # Truncate base64 image data in output
+                s = str(result)
+                while "data:image/" in s:
+                    start = s.index("data:image/")
+                    end = s.find("'", start)
+                    if end == -1:
+                        end = s.find('"', start)
+                    if end != -1:
+                        s = s[:start] + "<image>" + s[end:]
+                    else:
+                        break
+                print(f"[Step] {s}")
 
     print("-" * 50)
     print("Done.")
