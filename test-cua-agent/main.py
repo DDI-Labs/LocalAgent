@@ -24,8 +24,8 @@ def get_model_string() -> str:
         # UI-TARS via vLLM (best accuracy for GUI tasks, needs NVIDIA GPU)
         return os.getenv("VLLM_MODEL", "ByteDance/UI-TARS-1.5-7B")
     else:
-        # Qwen 2.5 VL via Ollama (easier setup, runs on most hardware)
-        return "omni+" + os.getenv("OLLAMA_MODEL", "ollama/qwen2.5vl:7b")
+        # Qwen 2.5 VL via Ollama using OpenAI-compatible endpoint (supports vision)
+        return "omni+" + os.getenv("OLLAMA_MODEL", "openai/qwen2.5vl:7b")
 
 
 PROMPT = f"""
