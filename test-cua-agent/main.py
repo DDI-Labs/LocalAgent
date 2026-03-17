@@ -29,9 +29,10 @@ LLM_PROVIDER_NAME = os.getenv("LLM_PROVIDER", "ollama")
 def get_model_string() -> str:
     """Return the model string based on the chosen provider."""
     if LLM_PROVIDER_NAME == "vllm":
-        return os.getenv("VLLM_MODEL", "ByteDance/UI-TARS-1.5-7B")
+        return "uitars+" + os.getenv("VLLM_MODEL", "openai/ByteDance-Seed/UI-TARS-1.5-7B")
     else:
-        return "omni+" + os.getenv("OLLAMA_MODEL", "openai/qwen2.5vl:7b")
+        # UI-TARS via Ollama using OpenAI-compatible endpoint
+        return "uitars+" + os.getenv("OLLAMA_MODEL", "openai/hf.co/mradermacher/UI-TARS-1.5-7B-GGUF:Q4_K_M")
 
 
 PROMPT = f"""
