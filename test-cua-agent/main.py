@@ -4,17 +4,25 @@ Uses CUA to launch a desktop sandbox, open NoMachine, and connect to a remote ho
 """
 
 import os
+from dotenv import load_dotenv
 
-# MUST set env vars before any other imports (litellm reads them at import time)
+# Load .env first so LLM_PROVIDER is available, then set OPENAI vars before CUA imports
+load_dotenv(override=False)
 os.environ.setdefault("LLM_PROVIDER", "ollama")
-if os.environ["LLM_PROVIDER"] == "ollama":
+_provider = os.environ["LLM_PROVIDER"]
+
+# MUST set OPENAI env vars before importing CUA/litellm (reads them at import time)
+if _provider == "ollama":
     os.environ["OPENAI_API_KEY"] = "not-needed"
     os.environ["OPENAI_BASE_URL"] = "http://localhost:11434/v1"
     os.environ["OPENAI_API_BASE"] = "http://localhost:11434/v1"
+elif _provider == "vllm":
+    os.environ["OPENAI_API_KEY"] = "not-needed"
+    _vllm_base = os.environ.get("VLLM_BASE_URL", "http://localhost:8080/v1")
+    os.environ["OPENAI_BASE_URL"] = _vllm_base
+    os.environ["OPENAI_API_BASE"] = _vllm_base
 
 import asyncio
-from dotenv import load_dotenv
-load_dotenv(override=False)  # don't override what we just set
 
 from computer import Computer
 from agent import ComputerAgent
@@ -29,7 +37,7 @@ LLM_PROVIDER_NAME = os.getenv("LLM_PROVIDER", "ollama")
 def get_model_string() -> str:
     """Return the model string based on the chosen provider."""
     if LLM_PROVIDER_NAME == "vllm":
-        return "uitars+" + os.getenv("VLLM_MODEL", "openai/ByteDance-Seed/UI-TARS-1.5-7B")
+        return "uitars+" + os.getenv("VLLM_MODEL", "openai/yujiepan/ui-tars-1.5-7B-GPTQ-W4A16g128")
     else:
         # UI-TARS via Ollama using OpenAI-compatible endpoint
         return "uitars+" + os.getenv("OLLAMA_MODEL", "openai/hf.co/mradermacher/UI-TARS-1.5-7B-GGUF:Q4_K_M")
@@ -65,7 +73,7 @@ async def main():
     agent = ComputerAgent(
         model=model,
         tools=[computer],
-        api_base="http://localhost:11434/v1",
+        api_base=os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1"),
     )
 
     print(f"Starting NoMachine agent (model={model})...")
