@@ -11,6 +11,14 @@ from agent import ComputerAgent
 
 load_dotenv()
 
+# Force Ollama's OpenAI-compatible endpoint for litellm
+if os.getenv("LLM_PROVIDER", "ollama") == "ollama":
+    os.environ.setdefault("OPENAI_API_KEY", "not-needed")
+    os.environ.setdefault("OPENAI_API_BASE", "http://localhost:11434/v1")
+
+import litellm
+litellm.api_base = os.environ.get("OPENAI_API_BASE", None)
+
 # --- Configuration ---
 NOMACHINE_HOST = os.getenv("NOMACHINE_HOST", "192.168.1.100")
 NOMACHINE_USER = os.getenv("NOMACHINE_USER", "user")
