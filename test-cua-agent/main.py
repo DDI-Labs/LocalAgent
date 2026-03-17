@@ -7,7 +7,7 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from computer import Computer
-from agent import ComputerAgent, LLM, AgentLoop, LLMProvider
+from agent import ComputerAgent
 
 load_dotenv()
 
@@ -18,22 +18,14 @@ NOMACHINE_PASSWORD = os.getenv("NOMACHINE_PASSWORD", "password")
 LLM_PROVIDER_NAME = os.getenv("LLM_PROVIDER", "ollama")
 
 
-def get_llm() -> tuple[AgentLoop, LLM]:
-    """Return the agent loop and LLM config based on the chosen provider."""
+def get_model_string() -> str:
+    """Return the model string based on the chosen provider."""
     if LLM_PROVIDER_NAME == "vllm":
         # UI-TARS via vLLM (best accuracy for GUI tasks, needs NVIDIA GPU)
-        return AgentLoop.UITARS, LLM(
-            provider=LLMProvider.OAICOMPAT,
-            name=os.getenv("VLLM_MODEL", "ByteDance/UI-TARS-1.5-7B"),
-            base_url=os.getenv("VLLM_BASE_URL", "http://localhost:8000/v1"),
-            api_key="not-needed",
-        )
+        return os.getenv("VLLM_MODEL", "ByteDance/UI-TARS-1.5-7B")
     else:
         # Qwen 2.5 VL via Ollama (easier setup, runs on most hardware)
-        return AgentLoop.OMNI, LLM(
-            provider=LLMProvider.OLLAMA,
-            name=os.getenv("OLLAMA_MODEL", "qwen2.5vl:7b"),
-        )
+        return "omni+" + os.getenv("OLLAMA_MODEL", "ollama/qwen2.5vl:7b")
 
 
 PROMPT = f"""
@@ -61,22 +53,20 @@ async def main():
         name="nomachine-agent",
     )
 
-    loop, model = get_llm()
+    model = get_model_string()
 
     agent = ComputerAgent(
-        computer=computer,
-        loop=loop,
         model=model,
+        tools=[computer],
+        api_base="http://localhost:11434" if LLM_PROVIDER_NAME == "ollama" else os.getenv("VLLM_BASE_URL", "http://localhost:8000/v1"),
     )
 
-    print(f"Starting NoMachine agent (provider={LLM_PROVIDER_NAME})...")
+    print(f"Starting NoMachine agent (model={model})...")
     print(f"Connecting to: {NOMACHINE_HOST} as {NOMACHINE_USER}")
     print("-" * 50)
 
     async with computer:
-        async for result in agent.run(
-            [{"role": "user", "content": PROMPT}],
-        ):
+        async for result in agent.run(PROMPT):
             if hasattr(result, "text"):
                 print(f"[Agent] {result.text}")
             else:
