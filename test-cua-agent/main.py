@@ -17,7 +17,7 @@ from agent import ComputerAgent
 # and AWQ (deprecated autoawq) both fail with current transformers.
 # Fix: bnb NF4 quantization + reduced image resolution to tame KV cache.
 import torch
-from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
+from transformers import AutoModelForImageTextToText, BitsAndBytesConfig
 
 _orig_model_from_pretrained = AutoModelForImageTextToText.from_pretrained
 
@@ -33,16 +33,21 @@ def _quantized_from_pretrained(pretrained_model_name_or_path, *args, **kwargs):
 
 AutoModelForImageTextToText.from_pretrained = _quantized_from_pretrained
 
-_orig_processor_from_pretrained = AutoProcessor.from_pretrained
+# Truncate conversation context to bound memory. The CUA agent loop
+# accumulates ALL screenshots; SDPA attention is O(n^2) so this OOMs
+# after ~8 steps. Keep first message (task prompt) + last 6 messages
+# (3 recent turns with screenshots) so the model sees current state.
+from agent.adapters.models.qwen2_5_vl import Qwen2_5_VLModel
 
-def _constrained_processor_from_pretrained(pretrained_model_name_or_path, *args, **kwargs):
-    # Reduce max_pixels from 4096*2160 (8.8M) to 1024*768 (786K).
-    # Each screenshot generates visual tokens proportional to pixel count;
-    # with multi-step context the KV cache grows until OOM at step 7+.
-    kwargs["max_pixels"] = 1024 * 768
-    return _orig_processor_from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+_orig_generate = Qwen2_5_VLModel.generate
 
-AutoProcessor.from_pretrained = _constrained_processor_from_pretrained
+def _bounded_generate(self, messages, max_new_tokens=128):
+    MAX_TAIL = 6
+    if len(messages) > MAX_TAIL + 1:
+        messages = [messages[0]] + messages[-MAX_TAIL:]
+    return _orig_generate(self, messages, max_new_tokens)
+
+Qwen2_5_VLModel.generate = _bounded_generate
 # --- End monkey-patch ---
 
 # --- Configuration ---
