@@ -14,9 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Download and install NoMachine client (free edition)
 # Update the version/URL as needed: https://downloads.nomachine.com/linux/
-ARG NOMACHINE_VERSION=8.16.1_1
+ARG NOMACHINE_VERSION=8.20.1_1
 ARG NOMACHINE_PKG=nomachine_${NOMACHINE_VERSION}_amd64.deb
-RUN curl -fSL "https://download.nomachine.com/download/8.16/Linux/${NOMACHINE_PKG}" -o /tmp/${NOMACHINE_PKG} \
+RUN curl -fSL "https://download.nomachine.com/download/8.20/Linux/${NOMACHINE_PKG}" -o /tmp/${NOMACHINE_PKG} \
     && dpkg -i /tmp/${NOMACHINE_PKG} || apt-get install -f -y \
     && rm /tmp/${NOMACHINE_PKG}
 
