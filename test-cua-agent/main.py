@@ -42,7 +42,7 @@ async def main():
         timeout=300,
     )
 
-    model = "huggingface-local/yujiepan/ui-tars-1.5-7B-GPTQ-W4A16g128"
+    model = "huggingface-local/flin775/UI-TARS-1.5-7B-AWQ"
 
     agent = ComputerAgent(
         model=model,
