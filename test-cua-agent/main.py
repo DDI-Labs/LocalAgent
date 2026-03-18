@@ -12,6 +12,27 @@ load_dotenv()
 from computer import Computer
 from agent import ComputerAgent
 
+# --- Monkey-patch: bitsandbytes 4-bit quantization ---
+# fp16 UI-TARS OOMs on 16 GiB GPU (14.5 GiB weights + vision overhead).
+# GPTQ (compressed-tensors) and AWQ (deprecated autoawq) both fail with
+# current transformers. bnb NF4 is the remaining viable path.
+import torch
+from transformers import AutoModelForImageTextToText, BitsAndBytesConfig
+
+_orig_from_pretrained = AutoModelForImageTextToText.from_pretrained
+
+def _quantized_from_pretrained(pretrained_model_name_or_path, *args, **kwargs):
+    kwargs["quantization_config"] = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_quant_type="nf4",
+    )
+    kwargs.setdefault("device_map", "auto")
+    return _orig_from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+
+AutoModelForImageTextToText.from_pretrained = _quantized_from_pretrained
+# --- End monkey-patch ---
+
 # --- Configuration ---
 NOMACHINE_HOST = os.getenv("NOMACHINE_HOST", "192.168.1.100")
 NOMACHINE_USER = os.getenv("NOMACHINE_USER", "user")
@@ -42,7 +63,7 @@ async def main():
         timeout=300,
     )
 
-    model = "huggingface-local/flin775/UI-TARS-1.5-7B-AWQ"
+    model = "huggingface-local/ByteDance-Seed/UI-TARS-1.5-7B"
 
     agent = ComputerAgent(
         model=model,
