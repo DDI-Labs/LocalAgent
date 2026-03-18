@@ -4,25 +4,10 @@ Uses CUA to launch a desktop sandbox, open NoMachine, and connect to a remote ho
 """
 
 import os
+import asyncio
 from dotenv import load_dotenv
 
-# Load .env first so LLM_PROVIDER is available, then set OPENAI vars before CUA imports
-load_dotenv(override=False)
-os.environ.setdefault("LLM_PROVIDER", "ollama")
-_provider = os.environ["LLM_PROVIDER"]
-
-# MUST set OPENAI env vars before importing CUA/litellm (reads them at import time)
-if _provider == "ollama":
-    os.environ["OPENAI_API_KEY"] = "not-needed"
-    os.environ["OPENAI_BASE_URL"] = "http://localhost:11434/v1"
-    os.environ["OPENAI_API_BASE"] = "http://localhost:11434/v1"
-elif _provider == "vllm":
-    os.environ["OPENAI_API_KEY"] = "not-needed"
-    _vllm_base = os.environ.get("VLLM_BASE_URL", "http://localhost:8080/v1")
-    os.environ["OPENAI_BASE_URL"] = _vllm_base
-    os.environ["OPENAI_API_BASE"] = _vllm_base
-
-import asyncio
+load_dotenv()
 
 from computer import Computer
 from agent import ComputerAgent
@@ -31,17 +16,6 @@ from agent import ComputerAgent
 NOMACHINE_HOST = os.getenv("NOMACHINE_HOST", "192.168.1.100")
 NOMACHINE_USER = os.getenv("NOMACHINE_USER", "user")
 NOMACHINE_PASSWORD = os.getenv("NOMACHINE_PASSWORD", "password")
-LLM_PROVIDER_NAME = os.getenv("LLM_PROVIDER", "ollama")
-
-
-def get_model_string() -> str:
-    """Return the model string based on the chosen provider."""
-    if LLM_PROVIDER_NAME == "vllm":
-        return "uitars+" + os.getenv("VLLM_MODEL", "openai/yujiepan/ui-tars-1.5-7B-GPTQ-W4A16g128")
-    else:
-        # UI-TARS via Ollama using OpenAI-compatible endpoint
-        return "uitars+" + os.getenv("OLLAMA_MODEL", "openai/hf.co/mradermacher/UI-TARS-1.5-7B-GGUF:Q4_K_M")
-
 
 PROMPT = f"""
 1. Open the NoMachine application from the application menu or by running "nomachine" from a terminal.
@@ -68,17 +42,15 @@ async def main():
         timeout=300,
     )
 
-    model = get_model_string()
+    model = "huggingface-local/ByteDance-Seed/UI-TARS-1.5-7B"
 
     agent = ComputerAgent(
         model=model,
         tools=[computer],
-        api_base=os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1"),
     )
 
     print(f"Starting NoMachine agent (model={model})...")
     print(f"Connecting to: {NOMACHINE_HOST} as {NOMACHINE_USER}")
-    print(f"OPENAI_BASE_URL={os.environ.get('OPENAI_BASE_URL')}")
     print("-" * 50)
 
     async with computer:
