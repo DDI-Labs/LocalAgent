@@ -12,25 +12,37 @@ load_dotenv()
 from computer import Computer
 from agent import ComputerAgent
 
-# --- Monkey-patch: bitsandbytes 4-bit quantization ---
-# fp16 UI-TARS OOMs on 16 GiB GPU (14.5 GiB weights + vision overhead).
-# GPTQ (compressed-tensors) and AWQ (deprecated autoawq) both fail with
-# current transformers. bnb NF4 is the remaining viable path.
+# --- Monkey-patch: fit 7B VLM in 16 GiB VRAM ---
+# fp16 UI-TARS OOMs (14.5 GiB weights + vision). GPTQ (compressed-tensors)
+# and AWQ (deprecated autoawq) both fail with current transformers.
+# Fix: bnb NF4 quantization + reduced image resolution to tame KV cache.
 import torch
-from transformers import AutoModelForImageTextToText, BitsAndBytesConfig
+from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
 
-_orig_from_pretrained = AutoModelForImageTextToText.from_pretrained
+_orig_model_from_pretrained = AutoModelForImageTextToText.from_pretrained
 
 def _quantized_from_pretrained(pretrained_model_name_or_path, *args, **kwargs):
     kwargs["quantization_config"] = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_compute_dtype=torch.bfloat16,
         bnb_4bit_quant_type="nf4",
+        bnb_4bit_use_double_quant=True,
     )
     kwargs.setdefault("device_map", "auto")
-    return _orig_from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+    return _orig_model_from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
 
 AutoModelForImageTextToText.from_pretrained = _quantized_from_pretrained
+
+_orig_processor_from_pretrained = AutoProcessor.from_pretrained
+
+def _constrained_processor_from_pretrained(pretrained_model_name_or_path, *args, **kwargs):
+    # Reduce max_pixels from 4096*2160 (8.8M) to 1024*768 (786K).
+    # Each screenshot generates visual tokens proportional to pixel count;
+    # with multi-step context the KV cache grows until OOM at step 7+.
+    kwargs["max_pixels"] = 1024 * 768
+    return _orig_processor_from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+
+AutoProcessor.from_pretrained = _constrained_processor_from_pretrained
 # --- End monkey-patch ---
 
 # --- Configuration ---
