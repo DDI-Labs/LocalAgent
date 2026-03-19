@@ -23,6 +23,7 @@ async def main():
         agent = ComputerAgent(
             model="cua/anthropic/claude-sonnet-4.5",
             tools=[computer],
+            only_n_most_recent_images=3,
         )
 
         messages = [{"role": "user", "content": TASK}]
