@@ -3,7 +3,8 @@
     "model": "cua/anthropic/claude-sonnet-4.5",
     "only_n_most_recent_images": 3,
     "max_retries": 3,
-    "screenshot_delay": 0.5
+    "screenshot_delay": 0.5,
+    "instructions": "You are a desktop automation agent controlling a Linux computer. Be methodical: take a screenshot first, understand what you see, then act. Wait for windows and applications to fully load before interacting. If something fails, try an alternative approach before giving up. Avoid getting stuck in a loop. Avoid interrupting/stopping running tasks by pressing Ctrl+c etc. You can safely ignore such windows and continue with just your task"
   },
   "server": {
     "host": "localhost",

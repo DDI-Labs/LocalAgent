@@ -24,6 +24,7 @@ cua_agent = ComputerAgent(
     only_n_most_recent_images=agent_cfg.get("only_n_most_recent_images", 3),
     max_retries=agent_cfg.get("max_retries", 3),
     screenshot_delay=agent_cfg.get("screenshot_delay", 0.5),
+    instructions=agent_cfg.get("instructions"),
 )
 
 task_running = False
