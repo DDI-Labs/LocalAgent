@@ -1,0 +1,37 @@
+{
+  "agent": {
+    "model": "cua/anthropic/claude-sonnet-4.5",
+    "only_n_most_recent_images": 3,
+    "max_retries": 3,
+    "screenshot_delay": 0.5
+  },
+  "server": {
+    "host": "localhost",
+    "port": 8765
+  },
+  "connections": {
+    "nomachine": {
+      "host_a": {
+        "name": "HostA",
+        "ip": "192.168.1.100",
+        "port": 4000,
+        "username": "user",
+        "password": ""
+      },
+      "host_b": {
+        "name": "HostB",
+        "ip": "192.168.1.101",
+        "port": 4000,
+        "username": "user",
+        "password": ""
+      }
+    },
+    "teamviewer": {
+      "host_c": {
+        "name": "HostC",
+        "id": "123-456-789",
+        "password": ""
+      }
+    }
+  }
+}
