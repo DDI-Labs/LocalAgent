@@ -85,7 +85,7 @@ Backend broadcasts: `{"status": "thinking|action|done|error|blocked|info", "msg"
 
 These Cua library files have local patches that must be reapplied if packages are reinstalled:
 
-1. `agent/adapters/mlxvlm_adapter.py` — `max_tokens`: 128 → 512
+1. `agent/adapters/mlxvlm_adapter.py` — `max_tokens`: 128 → 512; `generate()` return: unpack tuple → `result.text` (mlx_vlm now returns `GenerationResult` object)
 2. `computer/interface/models.py` — `Key.COMMAND="cmd"`, `Key.OPTION="alt"`
 3. `agent/loops/uitars.py` — `predict_click` regex: added `start_box` pattern
 4. `agent/loops/composed_grounded.py` — `get_last_computer_call_image`: accept JPEG (was PNG-only)

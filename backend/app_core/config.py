@@ -32,9 +32,54 @@ CUA_MODEL = os.getenv("CUA_MODEL", f"{GROUNDING_MODEL}+{PLANNING_MODEL}")
 # OpenRouter API key — required when PLANNING_MODEL uses openrouter/ prefix.
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 
-# Cua computer server connection
+# Cua computer server connection (used when SANDBOX_ENABLED=false)
 CUA_COMPUTER_SERVER_HOST = os.getenv("CUA_COMPUTER_SERVER_HOST", "localhost")
 CUA_COMPUTER_SERVER_PORT = int(os.getenv("CUA_COMPUTER_SERVER_PORT", "5757"))
+
+# ---------------------------------------------------------------------------
+# Sandbox configuration
+# ---------------------------------------------------------------------------
+# Set SANDBOX_ENABLED=true to run actions inside a Cua sandbox instead of
+# the local host computer server.  The grounding model still runs locally.
+#
+# Providers:
+#   lume   — local macOS VM via Apple Virtualization Framework (no API key)
+#   cloud  — Cua cloud sandbox (requires CUA_API_KEY)
+#   docker — local Linux container (no API key)
+#
+# Example — Lume macOS VM:
+#   SANDBOX_ENABLED=true
+#   SANDBOX_PROVIDER=lume
+#   SANDBOX_OS_TYPE=macos
+#   SANDBOX_NAME=macos-sequoia-cua:latest
+#
+# Example — Cua cloud (Linux):
+#   SANDBOX_ENABLED=true
+#   SANDBOX_PROVIDER=cloud
+#   SANDBOX_OS_TYPE=linux
+#   SANDBOX_NAME=my-sandbox-123
+#   CUA_API_KEY=sk_cua-api01_...
+SANDBOX_ENABLED = os.getenv("SANDBOX_ENABLED", "false").lower() == "true"
+
+# When SANDBOX_NAME is set and the lume daemon is available, automatically
+# start the VM before connecting so the backend is self-contained.
+LUME_AUTO_START = os.getenv("LUME_AUTO_START", "true").lower() == "true"
+LUME_API_PORT = int(os.getenv("LUME_API_PORT", "7777"))
+
+# AppleScript macros and local adapters only work when the computer server
+# runs on the same machine. Automatically disabled for remote/VM setups.
+MACOS_MACROS_ENABLED = (
+    not SANDBOX_ENABLED
+    and CUA_COMPUTER_SERVER_HOST in ("localhost", "127.0.0.1")
+)
+
+SANDBOX_PROVIDER = os.getenv("SANDBOX_PROVIDER", "lume")
+SANDBOX_OS_TYPE = os.getenv("SANDBOX_OS_TYPE", "macos")
+SANDBOX_NAME = os.getenv("SANDBOX_NAME", "macos-sequoia-cua:latest")
+SANDBOX_DISPLAY = os.getenv("SANDBOX_DISPLAY", "1024x768")
+SANDBOX_MEMORY = os.getenv("SANDBOX_MEMORY", "8GB")
+SANDBOX_CPU = os.getenv("SANDBOX_CPU", "4")
+CUA_API_KEY = os.getenv("CUA_API_KEY", "")
 
 # ---------------------------------------------------------------------------
 # PII sanitization
@@ -101,3 +146,32 @@ SKILL_MATCH_THRESHOLD = float(os.getenv("SKILL_MATCH_THRESHOLD", "0.55"))
 
 # WebSocket settings
 WS_HEARTBEAT_INTERVAL = 30  # Seconds between keep-alive pings
+
+# ---------------------------------------------------------------------------
+# Telemetry
+# ---------------------------------------------------------------------------
+# Cua SDK collects anonymous usage stats by default (OS, run durations, token
+# counts). Defaults to false here — set to true to allow collection.
+CUA_TELEMETRY_ENABLED = os.getenv("CUA_TELEMETRY_ENABLED", "false").lower() == "true"
+
+# ---------------------------------------------------------------------------
+# Tracing
+# ---------------------------------------------------------------------------
+# Low-level computer interaction tracing — records every click/type/screenshot
+# call with timing data, saved as ZIP archives alongside trajectories.
+# Unlike trajectories (agent-level), tracing captures raw interface calls.
+TRACING_ENABLED = os.getenv("TRACING_ENABLED", "false").lower() == "true"
+TRACING_DIR = os.getenv("TRACING_DIR", "traces")
+
+# ---------------------------------------------------------------------------
+# Sandboxed Python & Interactive Shell
+# ---------------------------------------------------------------------------
+# Allow the planning model to execute Python code and shell commands directly
+# in the connected VM/sandbox environment instead of going through the vision
+# loop. Dramatically faster for data processing, file operations, and scripting.
+SANDBOXED_PYTHON_ENABLED = os.getenv("SANDBOXED_PYTHON_ENABLED", "true").lower() == "true"
+# Name of the persistent venv maintained inside the VM for agent code runs.
+SANDBOXED_PYTHON_VENV = os.getenv("SANDBOXED_PYTHON_VENV", "agent_env")
+INTERACTIVE_SHELL_ENABLED = os.getenv("INTERACTIVE_SHELL_ENABLED", "true").lower() == "true"
+# Timeout (seconds) for a single shell command executed via PTY.
+SHELL_COMMAND_TIMEOUT = int(os.getenv("SHELL_COMMAND_TIMEOUT", "30"))

@@ -49,6 +49,24 @@ from app_core.config import (
     OPENROUTER_API_KEY,
     SKILL_LIBRARY_DIR,
     SKILL_MATCH_THRESHOLD,
+    SANDBOX_ENABLED,
+    SANDBOX_PROVIDER,
+    SANDBOX_OS_TYPE,
+    SANDBOX_NAME,
+    SANDBOX_DISPLAY,
+    SANDBOX_MEMORY,
+    SANDBOX_CPU,
+    CUA_API_KEY,
+    MACOS_MACROS_ENABLED,
+    LUME_AUTO_START,
+    LUME_API_PORT,
+    CUA_TELEMETRY_ENABLED,
+    TRACING_ENABLED,
+    TRACING_DIR,
+    SANDBOXED_PYTHON_ENABLED,
+    SANDBOXED_PYTHON_VENV,
+    INTERACTIVE_SHELL_ENABLED,
+    SHELL_COMMAND_TIMEOUT,
 )
 from app_core.skills import SkillLibrary
 from app_core.skills.compiler import compile_skill
@@ -76,8 +94,6 @@ from app_core.runtime.prompt_builder import PromptBuilder
 from app_core.runtime.metrics import RunMetrics
 from app_core.runtime.intent_router import IntentRouter, RouteResult
 from app_core.runtime.fallback_executor import VisionFallbackExecutor
-from app_core.runtime.observation import ObservationFusion
-from app_core.runtime.guards import ConfidenceGuard
 from app_core.adapters import BrowserAdapter, MediaAdapter, MacOSStateAdapter, BaseAdapter
 
 logger = logging.getLogger(__name__)
@@ -169,10 +185,6 @@ _vision_fallback: VisionFallbackExecutor | None = None
 
 # Adapters — instantiated during initialize()
 _adapters: list[BaseAdapter] = []
-
-# Observation and guard modules
-_observation_fusion: ObservationFusion | None = None
-_confidence_guard: ConfidenceGuard | None = None
 
 # Skill preflight approval state — separate from takeover and action-level HITL.
 # Used for task-scoped approval of approval_required skills.
@@ -369,18 +381,221 @@ def is_training_mode() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Lume VM auto-start
+# ---------------------------------------------------------------------------
+
+async def _ensure_vm_running(vm_name: str) -> str | None:
+    """Ensure the lume VM is running with a visible display, return its IP.
+
+    - If already running: opens the display via VNC URL (macOS Screen Sharing).
+    - If stopped: starts it via ``lume run`` CLI so a window appears, then
+      polls for the IP.
+
+    The HTTP API daemon lacks window-server access, so we always use the CLI
+    or the VNC URL to get a visible display rather than the API /run endpoint.
+    Returns the VM's IP on success, or None if lume is unavailable.
+    """
+    import json as _json
+    import os as _os
+    import subprocess as _subprocess
+    import urllib.request
+
+    # Resolve lume binary — subprocess inherits a minimal PATH that may not
+    # include ~/.local/bin, so check the known install location first.
+    lume_bin = _os.path.expanduser("~/.local/bin/lume")
+    if not _os.path.isfile(lume_bin):
+        lume_bin = "lume"  # fall back to whatever is on PATH
+
+    base = f"http://localhost:{LUME_API_PORT}/lume/vms"
+
+    def _api_get(url: str) -> dict | None:
+        try:
+            with urllib.request.urlopen(url, timeout=3) as r:
+                return _json.loads(r.read())
+        except Exception:
+            return None
+
+    info = _api_get(f"{base}/{vm_name}")
+
+    if info is not None:
+        status = info.get("status", "")
+        ip = info.get("ip") or info.get("ipAddress") or info.get("ip_address")
+
+        if status == "running" and ip:
+            # VM is already running — open the VNC URL to show the display.
+            vnc_url = info.get("vncUrl") or info.get("vnc_url")
+            if vnc_url:
+                logger.info(f"VM '{vm_name}' already running — opening display via VNC")
+                try:
+                    _subprocess.Popen(
+                        ["open", vnc_url],
+                        stdout=_subprocess.DEVNULL,
+                        stderr=_subprocess.DEVNULL,
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not open VNC display: {e}")
+            else:
+                logger.info(f"VM '{vm_name}' already running (no VNC URL in response)")
+            return ip
+
+    # VM not running (or API not reachable) — start it via CLI so the
+    # window appears under the current user session.
+    logger.info(f"Starting VM '{vm_name}' with display...")
+    try:
+        _subprocess.Popen(
+            [lume_bin, "run", vm_name],
+            stdout=_subprocess.DEVNULL,
+            stderr=_subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        logger.error(f"lume binary not found at {lume_bin!r} — cannot auto-start VM")
+        return None
+    except Exception as e:
+        logger.error(f"Failed to launch VM: {e}")
+        return None
+
+    # Poll until running and IP assigned (up to 120s)
+    for _ in range(40):
+        await asyncio.sleep(3)
+        info = _api_get(f"{base}/{vm_name}") or {}
+        status = info.get("status", "")
+        ip = info.get("ip") or info.get("ipAddress") or info.get("ip_address")
+        if status == "running" and ip:
+            break
+    else:
+        logger.warning(f"VM '{vm_name}' did not become ready in 120s")
+        return None
+
+    logger.info(f"VM '{vm_name}' is running at {ip}")
+    return ip
+
+
+# ---------------------------------------------------------------------------
+# Sandboxed Python & Interactive Shell tools
+# ---------------------------------------------------------------------------
+# These functions are registered as custom tools with ComputerAgent so the
+# planning model can call them directly instead of clicking through the UI.
+# execute_python uses computer.venv_exec to run code inside the VM.
+# run_shell_command uses computer.pty to open a bash session in the VM.
+
+
+def _run_code_in_env(code: str) -> str:
+    """Execute a Python code string and return captured stdout/stderr.
+
+    This function is serialised by venv_exec and runs inside the VM's venv.
+    It must be self-contained (stdlib only, no closures over outer scope).
+    """
+    import io
+    import sys
+
+    _old_out, _old_err = sys.stdout, sys.stderr
+    buf = io.StringIO()
+    sys.stdout = sys.stderr = buf
+    try:
+        exec(compile(code, "<agent>", "exec"), {})  # noqa: S102
+        output = buf.getvalue()
+        return output.strip() or "(executed successfully, no output)"
+    except Exception as exc:
+        return f"ERROR: {type(exc).__name__}: {exc}"
+    finally:
+        sys.stdout, sys.stderr = _old_out, _old_err
+
+
+async def execute_python(code: str, packages: str = "") -> str:
+    """Execute Python code directly inside the VM environment.
+
+    Use this instead of clicking through the UI for data processing, file
+    operations, API calls, or any computation that doesn't require a visible
+    UI interaction. Runs in an isolated venv inside the VM.
+
+    Args:
+        code: Valid Python source code to execute.
+        packages: Optional comma-separated pip package names to install first
+                  (e.g. "pandas,requests"). Already-installed packages are skipped.
+
+    Returns:
+        stdout/stderr captured from the execution, or an error message.
+    """
+    if _computer is None:
+        return "Error: Computer not initialized"
+    if not SANDBOXED_PYTHON_ENABLED:
+        return "Sandboxed Python execution is disabled."
+
+    try:
+        if packages:
+            pkg_list = [p.strip() for p in packages.split(",") if p.strip()]
+            await _computer.venv_install(SANDBOXED_PYTHON_VENV, pkg_list)
+
+        result = await _computer.venv_exec(SANDBOXED_PYTHON_VENV, _run_code_in_env, code)
+        return str(result)
+    except AttributeError:
+        return "Error: venv_exec not supported by this computer server version."
+    except Exception as exc:
+        return f"Error executing Python: {exc}"
+
+
+async def run_shell_command(command: str) -> str:
+    """Run a shell command inside the VM and return its output.
+
+    Use for file system operations, checking system state, installing software,
+    or any task that's faster to express as a shell command than as UI clicks.
+
+    Args:
+        command: Shell command string to execute in bash (e.g. "ls -la ~/Desktop").
+
+    Returns:
+        Combined stdout/stderr from the command, or an error message.
+    """
+    if _computer is None:
+        return "Error: Computer not initialized"
+    if not INTERACTIVE_SHELL_ENABLED:
+        return "Interactive shell execution is disabled."
+
+    try:
+        import re as _re
+
+        output_parts: list[str] = []
+
+        handle = await _computer.pty.create(
+            command="bash",
+            cols=200,
+            rows=50,
+            on_data=lambda chunk: output_parts.append(
+                chunk.decode("utf-8", errors="replace")
+            ),
+        )
+        await handle.send_stdin(command.encode() + b"\nexit\n")
+        await asyncio.wait_for(handle.wait(), timeout=float(SHELL_COMMAND_TIMEOUT))
+
+        raw = "".join(output_parts)
+        # Strip ANSI escape codes and carriage returns for clean output
+        clean = _re.sub(r"\x1b\[[0-9;]*[A-Za-z]|\r", "", raw)
+        return clean.strip() or "(no output)"
+    except asyncio.TimeoutError:
+        return f"Error: Command timed out after {SHELL_COMMAND_TIMEOUT}s"
+    except AttributeError:
+        return "Error: PTY not supported by this computer server version."
+    except Exception as exc:
+        return f"Error running shell command: {exc}"
+
+
+# ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
 
 async def initialize():
     """Connect to the Cua computer server and create the composed agent."""
-    global _computer, _agent, _ws_status_cb, _run_guard_cb, _pii_cb, _hitl_cb, _trajectory_cb, _skill_library, _intent_router, _vision_fallback, _adapters, _observation_fusion, _confidence_guard
+    global _computer, _agent, _ws_status_cb, _run_guard_cb, _pii_cb, _hitl_cb, _trajectory_cb, _skill_library, _intent_router, _vision_fallback, _adapters
 
     import os
 
     # Inject OpenRouter API key into environment for LiteLLM
     if OPENROUTER_API_KEY:
         os.environ.setdefault("OPENROUTER_API_KEY", OPENROUTER_API_KEY)
+
+    # Inject Cua API key for cloud/lume sandbox providers
+    if CUA_API_KEY:
+        os.environ.setdefault("CUA_API_KEY", CUA_API_KEY)
 
     # Cap MLX unified memory usage to prevent the grounding model from
     # starving other processes (browser, OS, etc.) on the Mac.
@@ -391,12 +606,36 @@ async def initialize():
     except Exception as e:
         logger.debug(f"MLX memory limit not set ({e}) — non-fatal")
 
-    _computer = Computer(
-        use_host_computer_server=True,
-        api_host=CUA_COMPUTER_SERVER_HOST,
-        api_port=CUA_COMPUTER_SERVER_PORT,
-    )
-    await _computer.run()
+    if SANDBOX_ENABLED:
+        logger.info(
+            f"Sandbox mode: provider={SANDBOX_PROVIDER}, os={SANDBOX_OS_TYPE}, name={SANDBOX_NAME}"
+        )
+        _computer = Computer(
+            os_type=SANDBOX_OS_TYPE,
+            provider_type=SANDBOX_PROVIDER,
+            name=SANDBOX_NAME,
+            display=SANDBOX_DISPLAY,
+            memory=SANDBOX_MEMORY,
+            cpu=SANDBOX_CPU,
+            telemetry_enabled=CUA_TELEMETRY_ENABLED,
+        )
+        await _computer.run()
+    else:
+        # Auto-start the lume VM if configured, and use its IP dynamically
+        host = CUA_COMPUTER_SERVER_HOST
+        if LUME_AUTO_START and SANDBOX_NAME and SANDBOX_PROVIDER == "lume":
+            vm_ip = await _ensure_vm_running(SANDBOX_NAME)
+            if vm_ip:
+                host = vm_ip
+                logger.info(f"Using VM IP from lume: {host}")
+
+        _computer = Computer(
+            use_host_computer_server=True,
+            api_host=host,
+            api_port=CUA_COMPUTER_SERVER_PORT,
+            telemetry_enabled=CUA_TELEMETRY_ENABLED,
+        )
+        await _computer.run()
 
     # --- Callback stack ---
     # Order matters: normalisation and security run first, then PII sanitization,
@@ -441,13 +680,23 @@ async def initialize():
         HistoryTrimCallback(history=_history, max_entries=50),
     ]
 
+    # Build tool list — always include the Computer, optionally add Python/shell tools
+    agent_tools: list = [_computer]
+    if SANDBOXED_PYTHON_ENABLED:
+        agent_tools.append(execute_python)
+        logger.info("Sandboxed Python tool enabled (execute_python)")
+    if INTERACTIVE_SHELL_ENABLED:
+        agent_tools.append(run_shell_command)
+        logger.info("Interactive shell tool enabled (run_shell_command)")
+
     _agent = ComputerAgent(
         model=CUA_MODEL,
-        tools=[_computer],
+        tools=agent_tools,
         max_trajectory_budget=25.0,
         callbacks=callbacks,
         instructions=MACOS_INSTRUCTIONS,
         use_prompt_caching=True,
+        telemetry_enabled=CUA_TELEMETRY_ENABLED,
     )
 
     # Load the skill library
@@ -463,10 +712,6 @@ async def initialize():
         MediaAdapter(),
         MacOSStateAdapter(),
     ]
-
-    # Initialize observation fusion and confidence guards
-    _observation_fusion = ObservationFusion(adapters=_adapters)
-    _confidence_guard = ConfidenceGuard()
 
     # Set up the intent router with ordered strategies
     _intent_router = IntentRouter()
@@ -683,6 +928,8 @@ async def _preflight_skill_approval(
 
 async def _route_macro(state: TaskState) -> RouteResult:
     """Try to handle the task via AppleScript macros."""
+    if not MACOS_MACROS_ENABLED:
+        return RouteResult(handled=False)
     stripped = state.original_prompt.strip()
 
     # Compound: "open Spotify and play some music"
@@ -734,6 +981,8 @@ async def _route_macro(state: TaskState) -> RouteResult:
 
 async def _route_adapter(state: TaskState) -> RouteResult:
     """Try to handle the task via a structured adapter."""
+    if not MACOS_MACROS_ENABLED:
+        return RouteResult(handled=False)
     for adapter in _adapters:
         if adapter.can_handle(state.effective_prompt):
             logger.info("Adapter '%s' can handle: %s", adapter.name, state.effective_prompt[:60])
@@ -797,6 +1046,7 @@ async def run_agent_task(prompt: str, broadcast: StatusCallback | None = None):
 
     state = TaskState(original_prompt=prompt, effective_prompt=prompt, skill_query=prompt)
     metrics = RunMetrics()
+    _task_trace_id = uuid.uuid4().hex[:8]
 
     def _send(status: str, msg: str, **extra):
         if broadcast:
@@ -804,11 +1054,13 @@ async def run_agent_task(prompt: str, broadcast: StatusCallback | None = None):
 
     _running = True
 
-    # Reset per-task modules
-    if _observation_fusion is not None:
-        _observation_fusion.reset()
-    if _confidence_guard is not None:
-        _confidence_guard.reset()
+    # Start low-level computer interaction tracing if enabled
+    if TRACING_ENABLED and _computer is not None:
+        try:
+            await _computer.tracing.start()
+            logger.info(f"Tracing started for task {_task_trace_id}")
+        except Exception as _e:
+            logger.warning(f"Tracing start failed (non-fatal): {_e}")
 
     # Wire per-task broadcast into callbacks
     if _ws_status_cb is not None:
@@ -905,6 +1157,16 @@ async def run_agent_task(prompt: str, broadcast: StatusCallback | None = None):
             _pii_cb.set_broadcast(None)
         if _hitl_cb is not None:
             _hitl_cb.set_broadcast(None)
+        # Save trace archive if tracing was enabled
+        if TRACING_ENABLED and _computer is not None:
+            try:
+                import os as _os
+                _os.makedirs(TRACING_DIR, exist_ok=True)
+                trace_path = _os.path.join(TRACING_DIR, f"trace_{_task_trace_id}.zip")
+                await _computer.tracing.stop(output=trace_path)
+                logger.info(f"Trace saved to {trace_path}")
+            except Exception as _e:
+                logger.warning(f"Tracing stop failed (non-fatal): {_e}")
         gc.collect()
 
 
@@ -948,8 +1210,16 @@ def get_skills_info() -> list[dict]:
 
 
 async def check_services() -> dict:
-    """Check if required services (computer server) are reachable."""
-    status = {"computer_server": False, "model": CUA_MODEL}
+    """Check if required services are reachable."""
+    status = {"computer_server": False, "model": CUA_MODEL, "sandbox": SANDBOX_ENABLED}
+
+    if SANDBOX_ENABLED:
+        # In sandbox mode there is no local computer server to check.
+        # The computer is already connected if _computer is not None.
+        status["computer_server"] = _computer is not None
+        status["sandbox_provider"] = SANDBOX_PROVIDER
+        status["sandbox_name"] = SANDBOX_NAME
+        return status
 
     def _tcp_check(host: str, port: int, timeout: float = 1.0) -> bool:
         try:

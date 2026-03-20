@@ -28,21 +28,28 @@ TARGET_MAX_DIMENSION = 1536
 JPEG_QUALITY = 75
 
 
-def _is_already_optimized(base64_data: str) -> bool:
-    """Check if an image has already been compressed by us.
+def _is_already_jpeg(base64_data: str) -> bool:
+    """Return True if the base64 image is a JPEG (checks magic bytes).
 
-    Heuristic: if it's a small JPEG (< 80KB decoded) and already within our
-    target dimensions, skip re-processing to avoid wasting CPU every LLM call.
+    Only JPEG output is safe to skip — re-labelling a PNG as image/jpeg causes
+    a 400 from strict providers (Google Vertex AI via OpenRouter).
     """
-    raw_size = len(base64_data) * 3 // 4  # approx decoded size
-    return raw_size < 80_000  # 80KB — our compressed outputs are typically 5-60KB
+    try:
+        # Decode just the first 3 bytes (4 base64 chars → 3 bytes)
+        padded = base64_data[:4]
+        header = base64.b64decode(padded + "==")
+        return header[:2] == b"\xff\xd8"  # JPEG SOI marker
+    except Exception:
+        return False
 
 
 def _optimize_image(base64_data: str) -> str:
-    """Downscale and compress a base64-encoded screenshot."""
-    # Skip images that are already small enough (previously optimized)
-    if _is_already_optimized(base64_data):
-        logger.debug("Skipping already-optimized image")
+    """Downscale and compress a base64-encoded screenshot to JPEG."""
+    # Skip only if the image is already a small JPEG (previously optimised by us).
+    # Never skip PNGs — returning PNG bytes labelled as image/jpeg causes a 400.
+    raw_size = len(base64_data) * 3 // 4  # approx decoded bytes
+    if _is_already_jpeg(base64_data) and raw_size < 80_000:
+        logger.debug("Skipping already-optimized JPEG")
         return base64_data
 
     image_bytes = base64.b64decode(base64_data)

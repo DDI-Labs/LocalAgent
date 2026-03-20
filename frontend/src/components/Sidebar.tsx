@@ -1,11 +1,4 @@
-import { LayoutDashboard, ScrollText, Settings, Bot } from "lucide-react";
-import { cn } from "@/lib/utils";
-
-const navItems = [
-  { icon: LayoutDashboard, label: "Dashboard", active: true },
-  { icon: ScrollText, label: "Automation Logs", active: false },
-  { icon: Settings, label: "Settings", active: false },
-];
+import { Bot } from "lucide-react";
 
 export function Sidebar() {
   return (
@@ -21,29 +14,8 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 px-3 py-4">
-        <ul className="space-y-1">
-          {navItems.map((item) => (
-            <li key={item.label}>
-              <button
-                className={cn(
-                  "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
-                  item.active
-                    ? "bg-accent/10 text-accent"
-                    : "text-text-secondary hover:bg-bg-card hover:text-text-primary",
-                )}
-              >
-                <item.icon className="h-4 w-4" />
-                {item.label}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </nav>
-
       {/* Footer */}
-      <div className="border-t border-border px-5 py-4">
+      <div className="mt-auto border-t border-border px-5 py-4">
         <p className="text-xs text-text-secondary">v0.1.0 MVP</p>
       </div>
     </aside>
