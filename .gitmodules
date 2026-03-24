@@ -1,3 +1,6 @@
 [submodule "test-openclaw/test-openclaw/openclaw"]
 	path = test-openclaw/test-openclaw/openclaw
 	url = git@github-yapa:openclaw/openclaw.git
+[submodule "test-openclaw/openclaw"]
+	path = test-openclaw/openclaw
+	url = git@github-yapa:openclaw/openclaw.git
