@@ -7,13 +7,16 @@ import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any
+from typing import Any, Callable
 
 from ..models import AdapterResult, BuildingConfig, ParsedPrompt
 from ..utils import extract_decision_from_text_or_json, normalize_plate, to_decision
 
 
 class CuaAdapter:
+    def __init__(self, event_reporter: Callable[[str], None] | None = None) -> None:
+        self._event_reporter = event_reporter
+
     def verify(self, building: BuildingConfig, request: ParsedPrompt) -> AdapterResult:
         cua_cfg = building.raw.get("cua", {})
         mode = str(cua_cfg.get("mode", "simulate")).lower()
@@ -136,15 +139,18 @@ class CuaAdapter:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + max(timeout_seconds, 1)
 
+        self._emit(f"[cua] Connecting to {ws_server_url}")
         async with websockets.connect(ws_server_url) as ws:
             # Server sends {"type":"ready"} on connect.
             ready_raw = await self._recv_with_deadline(ws, deadline)
             self._append_transcript_line(transcript, ready_raw)
+            self._emit_ready(ready_raw)
 
             task_message: dict[str, Any] = {"type": "task", "content": task_prompt}
             if model_override:
                 task_message["model"] = str(model_override)
             await ws.send(json.dumps(task_message))
+            self._emit("[cua] Task submitted to runtime")
 
             while True:
                 raw = await self._recv_with_deadline(ws, deadline)
@@ -158,19 +164,26 @@ class CuaAdapter:
                 if msg_type == "message":
                     text = str(message.get("text", ""))
                     self._append_transcript_line(transcript, text)
+                    self._emit(f"[agent] {text}")
                     parsed = self._extract_agent_decision(text)
                     if parsed:
                         final_decision = parsed
                 elif msg_type == "action":
-                    self._append_transcript_line(transcript, f"[action] {message.get('detail')}")
+                    action_line = f"[action] {message.get('detail')}"
+                    self._append_transcript_line(transcript, action_line)
+                    self._emit(action_line)
                 elif msg_type == "done":
+                    self._emit(f"[done] {message.get('summary', 'Task completed.')}")
                     break
                 elif msg_type == "cancelled":
+                    self._emit(f"[cancelled] {message.get('message', '')}")
                     raise RuntimeError("CUA task was cancelled by server.")
                 elif msg_type == "error":
+                    self._emit(f"[error] {message.get('message', '')}")
                     raise RuntimeError(f"CUA server error: {message.get('message')}")
                 else:
                     self._append_transcript_line(transcript, raw)
+                    self._emit(f"[server] {raw}")
 
         if not final_decision:
             joined = "\n".join(transcript)
@@ -182,6 +195,7 @@ class CuaAdapter:
                 "Ensure the CUA prompt returns 'FINAL_DECISION: Accepted|Denied'."
             )
 
+        self._emit(f"[decision] {final_decision}")
         return final_decision, transcript[-30:]
 
     async def _recv_with_deadline(self, ws: Any, deadline: float) -> str:
@@ -268,6 +282,22 @@ class CuaAdapter:
         text = str(line).strip()
         if text:
             transcript.append(text)
+
+    def _emit(self, line: str) -> None:
+        if self._event_reporter:
+            self._event_reporter(line)
+
+    def _emit_ready(self, ready_raw: str) -> None:
+        try:
+            message = json.loads(ready_raw)
+        except json.JSONDecodeError:
+            self._emit(f"[server] {ready_raw}")
+            return
+
+        if str(message.get("type", "")).lower() == "ready":
+            self._emit("[server] Ready for tasks.")
+        else:
+            self._emit(f"[server] {ready_raw}")
 
     @staticmethod
     def _extract_agent_decision(text: str) -> str | None:

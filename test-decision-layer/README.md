@@ -77,6 +77,7 @@ Behavior:
 - `api` route: prints `Accepted` or `Denied`
 - `cua` route: prints `Accepted` or `Denied`
 - `openclaw` route: prints `Delegating to openclaw` and exits
+- with `--verbose`, CUA websocket tasks stream live events to stderr (`[agent]`, `[action]`, `[done]`)
 
 Examples:
 
@@ -96,7 +97,21 @@ cd /home/uthp/Documents/Projects/LocalAgent/test-decision-layer/cua_runtime
 cp config.sample.json config.json
 ```
 
-2. Start the single runtime process:
+2. Set CUA API key (required for `cua/...` models):
+
+Option A - current shell:
+
+```bash
+export CUA_API_KEY="your_real_key"
+```
+
+Option B - `.env` file in `cua_runtime/`:
+
+```bash
+echo 'CUA_API_KEY=your_real_key' >> .env
+```
+
+3. Start the single runtime process:
 
 ```bash
 cd /home/uthp/Documents/Projects/LocalAgent/test-decision-layer/cua_runtime
@@ -106,7 +121,7 @@ python3 ws_server.py
 `ws_server.py` now starts both `computer_server` and the CUA websocket service in one process.
 Use one `Ctrl+C` to shut down both.
 
-3. Run decision layer prompt for `Building-CUA`:
+4. Run decision layer prompt for `Building-CUA`:
 
 ```bash
 cd /home/uthp/Documents/Projects/LocalAgent/test-decision-layer

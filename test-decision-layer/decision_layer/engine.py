@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Callable
+
 from .adapters.api_adapter import ApiAdapter
 from .adapters.cua_adapter import CuaAdapter
 from .models import AppConfig, DecisionResult
@@ -7,10 +9,14 @@ from .prompt_parser import parse_prompt
 
 
 class DecisionEngine:
-    def __init__(self, config: AppConfig) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        cua_event_reporter: Callable[[str], None] | None = None,
+    ) -> None:
         self._config = config
         self._api_adapter = ApiAdapter()
-        self._cua_adapter = CuaAdapter()
+        self._cua_adapter = CuaAdapter(event_reporter=cua_event_reporter)
 
     def process_prompt(self, prompt: str) -> DecisionResult:
         parsed = parse_prompt(prompt, self._config.alias_lookup)
@@ -75,4 +81,3 @@ class DecisionEngine:
             reason=f"Unsupported method '{building.method}'.",
             parsed_prompt=parsed.__dict__,
         )
-
