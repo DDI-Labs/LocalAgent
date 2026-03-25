@@ -1,0 +1,49 @@
+{
+  "buildings": [
+    {
+      "id": "Building-A",
+      "aliases": ["A Tower", "Building A", "Bldg-A"],
+      "method": "api",
+      "api": {
+        "mode": "simulate",
+        "default_decision": false,
+        "simulation_records": {
+          "BYU0293": true,
+          "ABC1000": true,
+          "BAD0001": false
+        }
+      }
+    },
+    {
+      "id": "Building-B",
+      "aliases": ["B Tower", "Building B", "Bldg-B"],
+      "method": "cua",
+      "cua": {
+        "mode": "simulate",
+        "remote_connection_app": "TeamViewer",
+        "remote_host": "10.20.2.15",
+        "credentials": {
+          "username": "operator_building_b",
+          "password": "replace-with-secret-store"
+        },
+        "remote_verification_app": "LegacyParkingDesk",
+        "verification_steps": [
+          "Open Tenant Validation tab",
+          "Search by license plate",
+          "Confirm active parking pass"
+        ],
+        "default_decision": false,
+        "simulation_records": {
+          "QWE111": true,
+          "XYZ999": false
+        }
+      }
+    },
+    {
+      "id": "Building-C",
+      "aliases": ["C Tower", "Building C", "Bldg-C"],
+      "method": "openclaw"
+    }
+  ]
+}
+
