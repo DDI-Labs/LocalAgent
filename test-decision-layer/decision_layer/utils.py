@@ -38,10 +38,18 @@ def extract_decision_from_text_or_json(content: str, default: str = "Denied") ->
         payload = None
 
     if isinstance(payload, dict):
-        for key in ("decision", "status", "result", "accepted"):
-            if key in payload:
-                return to_decision(payload[key], default=default)
+        lowered = {str(key).lower(): value for key, value in payload.items()}
+        for key in (
+            "decision",
+            "status",
+            "result",
+            "accepted",
+            "accessstatus",
+            "access_status",
+            "completed",
+        ):
+            if key in lowered:
+                return to_decision(lowered[key], default=default)
         return default
 
     return to_decision(text, default=default)
-

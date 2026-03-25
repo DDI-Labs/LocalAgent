@@ -31,6 +31,12 @@ class PromptParserTests(unittest.TestCase):
         self.assertEqual(parsed.building_id, "Building-A")
         self.assertIsNone(parsed.license_plate)
 
+    def test_supports_single_digit_plate_for_todo_flow(self) -> None:
+        prompt = "Hi, I'm Pat from Building-CUA. Plate number is 3."
+        parsed = parse_prompt(prompt, self.config.alias_lookup)
+        self.assertEqual(parsed.building_id, "Building-CUA")
+        self.assertEqual(parsed.license_plate, "3")
+
 
 if __name__ == "__main__":
     unittest.main()

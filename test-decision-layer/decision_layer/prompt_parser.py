@@ -12,15 +12,15 @@ NAME_PATTERNS = [
 
 PLATE_PATTERNS = [
     re.compile(
-        r"\b(?:licen[cs]e|licence)\s*plate(?:\s*(?:number|no\.?))?\s*(?:is|=|:)?\s*([A-Za-z0-9-]{2,15})",
+        r"\b(?:licen[cs]e|licence)\s*plate(?:\s*(?:number|no\.?))?\s*(?:is|=|:)?\s*([A-Za-z0-9-]{1,15})",
         re.IGNORECASE,
     ),
     re.compile(
-        r"\bplate(?:\s*(?:number|no\.?))?\s*(?:is|=|:)?\s*([A-Za-z0-9-]{2,15})",
+        r"\bplate(?:\s*(?:number|no\.?))?\s*(?:is|=|:)?\s*([A-Za-z0-9-]{1,15})",
         re.IGNORECASE,
     ),
     re.compile(
-        r"\brego(?:\s*(?:number|no\.?))?\s*(?:is|=|:)?\s*([A-Za-z0-9-]{2,15})",
+        r"\brego(?:\s*(?:number|no\.?))?\s*(?:is|=|:)?\s*([A-Za-z0-9-]{1,15})",
         re.IGNORECASE,
     ),
 ]

@@ -1,0 +1,32 @@
+{
+  "agent": {
+    "model": "cua/anthropic/claude-sonnet-4.5",
+    "only_n_most_recent_images": 3,
+    "max_retries": 3,
+    "screenshot_delay": 0.5,
+    "instructions": "You are a desktop automation agent controlling a Linux computer. Be methodical: take a screenshot first, understand what you see, then act. Wait for windows and applications to fully load before interacting. If something fails, try an alternative approach before giving up. Avoid getting stuck in a loop."
+  },
+  "server": {
+    "host": "localhost",
+    "port": 8765
+  },
+  "computer_server": {
+    "auto_start": true,
+    "display": ":0",
+    "log_level": "debug",
+    "startup_delay_seconds": 1.5,
+    "connect_retries": 10,
+    "connect_retry_delay_seconds": 0.7
+  },
+  "connections": {
+    "nomachine": {
+      "building_cua_host": {
+        "name": "Building-CUA Host",
+        "ip": "<REMOTE_HOST_PLACEHOLDER>",
+        "port": 4000,
+        "username": "<REMOTE_USERNAME_PLACEHOLDER>",
+        "password": "<REMOTE_PASSWORD_PLACEHOLDER>"
+      }
+    }
+  }
+}
