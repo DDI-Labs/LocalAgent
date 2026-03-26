@@ -70,6 +70,7 @@ Useful CUA websocket fields in config:
 python3 main.py "<driver prompt>"
 python3 main.py "<driver prompt>" --config /path/to/buildings.json
 python3 main.py "<driver prompt>" --verbose
+python3 main.py "<driver prompt>" --no-cua-alerts
 ```
 
 Behavior:
@@ -78,6 +79,7 @@ Behavior:
 - `cua` route: prints `Accepted` or `Denied`
 - `openclaw` route: prints `Delegating to openclaw` and exits
 - with `--verbose`, CUA websocket tasks stream live events to stderr (`[agent]`, `[action]`, `[done]`)
+- CUA websocket runs also show a Linux desktop popup on completion or failure when a GUI session is available; use `--no-cua-alerts` to disable it
 
 Examples:
 
