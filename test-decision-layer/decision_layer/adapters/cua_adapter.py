@@ -65,9 +65,7 @@ class CuaAdapter:
     ) -> dict[str, Any]:
         return {
             "building_id": building.id,
-            "remote_connection_app": cua_cfg.get("remote_connection_app"),
-            "remote_host": cua_cfg.get("remote_host"),
-            "credentials": cua_cfg.get("credentials", {}),
+            "connection_ref": cua_cfg.get("connection_ref"),
             "remote_verification_app": cua_cfg.get("remote_verification_app"),
             "verification_steps": cua_cfg.get("verification_steps", []),
             "claimant": {
@@ -100,13 +98,18 @@ class CuaAdapter:
                     task_prompt=task_prompt,
                     timeout_seconds=timeout_seconds,
                     model_override=model_override,
+                    connection_ref=handoff.get("connection_ref"),
                 )
             )
         except RuntimeError as exc:
             return AdapterResult(
                 decision="Denied",
                 reason=str(exc),
-                details={"ws_server_url": ws_server_url, "task_prompt": task_prompt},
+                details={
+                    "ws_server_url": ws_server_url,
+                    "task_prompt": task_prompt,
+                    "connection_ref": handoff.get("connection_ref"),
+                },
             )
 
         return AdapterResult(
@@ -115,6 +118,7 @@ class CuaAdapter:
             details={
                 "ws_server_url": ws_server_url,
                 "model": model_override,
+                "connection_ref": handoff.get("connection_ref"),
                 "task_prompt": task_prompt,
                 "transcript": transcript,
             },
@@ -126,6 +130,7 @@ class CuaAdapter:
         task_prompt: str,
         timeout_seconds: int,
         model_override: Any,
+        connection_ref: Any,
     ) -> tuple[str, list[str]]:
         try:
             import websockets  # type: ignore
@@ -149,6 +154,8 @@ class CuaAdapter:
             task_message: dict[str, Any] = {"type": "task", "content": task_prompt}
             if model_override:
                 task_message["model"] = str(model_override)
+            if connection_ref:
+                task_message["connection_ref"] = str(connection_ref)
             await ws.send(json.dumps(task_message))
             self._emit("[cua] Task submitted to runtime")
 
@@ -230,10 +237,7 @@ class CuaAdapter:
         if verification_url:
             steps.append(f"Navigate to {verification_url}")
         steps.append(f"Read '{decision_field}' and determine if it is true or false")
-
-        credentials = handoff.get("credentials", {})
-        username = credentials.get("username", "")
-        password = credentials.get("password", "")
+        connection_ref = handoff.get("connection_ref") or "Not provided"
 
         prompt_lines = [
             "You are an access verification agent for a car park gate operator.",
@@ -243,11 +247,8 @@ class CuaAdapter:
             f"- Driver Name: {claimant_name}",
             f"- Licence Plate: {claimant_plate}",
             "",
-            "Connection details:",
-            f"- Remote connection app: {handoff.get('remote_connection_app')}",
-            f"- Remote host: {handoff.get('remote_host')}",
-            f"- Username: {username}",
-            f"- Password: {password}",
+            "Runtime context:",
+            f"- Connection reference: {connection_ref}",
             f"- Remote verification app: {handoff.get('remote_verification_app')}",
             "",
             "Actions to perform:",

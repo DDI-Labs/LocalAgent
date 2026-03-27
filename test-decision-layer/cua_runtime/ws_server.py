@@ -10,6 +10,11 @@ from dotenv import load_dotenv
 from computer import Computer
 from agent import ComputerAgent
 
+try:
+    from .prompt_builder import build_task_prompt
+except ImportError:
+    from prompt_builder import build_task_prompt
+
 load_dotenv()
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "config.json"
@@ -47,25 +52,6 @@ def _resolve_agent(model_override: str | None) -> tuple[ComputerAgent, str]:
     return _agents_by_model[selected_model], selected_model
 
 
-def build_task_prompt(task_text: str) -> str:
-    """Enrich raw task text with known connection details when names are referenced."""
-    connections = CONFIG.get("connections", {})
-    context_lines = []
-
-    for app_name, hosts in connections.items():
-        for host_key, details in hosts.items():
-            name = details.get("name", host_key)
-            if name.lower() in task_text.lower():
-                context_lines.append(f"Connection info for {name} ({app_name}):")
-                for key, value in details.items():
-                    if key != "name" and value:
-                        context_lines.append(f"  {key}: {value}")
-
-    if context_lines:
-        return task_text + "\n\n" + "\n".join(context_lines)
-    return task_text
-
-
 def serialize_safe(obj):
     try:
         json.dumps(obj)
@@ -76,7 +62,12 @@ def serialize_safe(obj):
         return str(obj)
 
 
-async def run_task(ws, task_text: str, model_override: str | None = None):
+async def run_task(
+    ws,
+    task_text: str,
+    model_override: str | None = None,
+    connection_ref: str | None = None,
+):
     global task_running, cancel_requested
     task_running = True
     cancel_requested = False
@@ -92,7 +83,11 @@ async def run_task(ws, task_text: str, model_override: str | None = None):
             )
         )
 
-        prompt = build_task_prompt(task_text)
+        prompt = build_task_prompt(
+            task_text=task_text,
+            connections=CONFIG.get("connections", {}),
+            connection_ref=connection_ref,
+        )
         messages = [{"role": "user", "content": prompt}]
 
         async for result in agent.run(messages):
@@ -216,11 +211,13 @@ async def handle_client(ws):
                     continue
 
                 model_override = msg.get("model")
+                connection_ref = msg.get("connection_ref")
                 current_task = asyncio.create_task(
                     run_task(
                         ws=ws,
                         task_text=content,
                         model_override=model_override,
+                        connection_ref=connection_ref,
                     )
                 )
             elif msg_type == "cancel":

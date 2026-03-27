@@ -61,8 +61,14 @@ Useful CUA websocket fields in config:
 - `mode: websocket`
 - `ws_server_url` (for example `ws://localhost:8765`)
 - `model` (forwarded to CUA runtime task request)
+- `connection_ref` (lookup key for runtime-managed connection details)
 - `verification_url_template`
 - `decision_field`
+
+Connection ownership:
+
+- `config/buildings*.json` should keep routing and workflow fields only
+- `cua_runtime/config.json` should own connection inventory, host/port values, and credentials
 
 ## CLI
 
@@ -98,6 +104,8 @@ On your target machine (where CUA deps are installed):
 cd /home/uthp/Documents/Projects/LocalAgent/test-decision-layer/cua_runtime
 cp config.sample.json config.json
 ```
+
+Fill in the `connections` entries in `config.json` with the real host, port, and credentials for any `connection_ref` values used by your building config.
 
 2. Set CUA API key (required for `cua/...` models):
 

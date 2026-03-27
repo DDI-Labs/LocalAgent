@@ -20,9 +20,7 @@ class CuaAdapterTests(unittest.TestCase):
     def test_build_task_prompt_includes_url_and_rule(self) -> None:
         handoff = {
             "building_id": "Building-CUA",
-            "remote_connection_app": "NoMachine",
-            "remote_host": "10.0.0.10",
-            "credentials": {"username": "u", "password": "p"},
+            "connection_ref": "building_cua_host",
             "remote_verification_app": "Google Chrome",
             "verification_steps": ["Open Chrome"],
             "claimant": {"name": "Pat", "license_plate": "3"},
@@ -36,8 +34,8 @@ class CuaAdapterTests(unittest.TestCase):
         self.assertIn("https://jsonplaceholder.typicode.com/todos/3", prompt)
         self.assertIn("FINAL_DECISION: Accepted", prompt)
         self.assertIn("'completed' is true", prompt)
+        self.assertIn("Connection reference: building_cua_host", prompt)
 
 
 if __name__ == "__main__":
     unittest.main()
-

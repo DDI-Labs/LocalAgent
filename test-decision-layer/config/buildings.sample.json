@@ -20,12 +20,6 @@
       "method": "cua",
       "cua": {
         "mode": "simulate",
-        "remote_connection_app": "TeamViewer",
-        "remote_host": "10.20.2.15",
-        "credentials": {
-          "username": "operator_building_b",
-          "password": "replace-with-secret-store"
-        },
         "remote_verification_app": "LegacyParkingDesk",
         "verification_steps": [
           "Open Tenant Validation tab",
@@ -67,12 +61,7 @@
         "mode": "websocket",
         "ws_server_url": "ws://localhost:8765",
         "model": "cua/anthropic/claude-sonnet-4.5",
-        "remote_connection_app": "NoMachine",
-        "remote_host": "<REMOTE_HOST_PLACEHOLDER>",
-        "credentials": {
-          "username": "<REMOTE_USERNAME_PLACEHOLDER>",
-          "password": "<REMOTE_PASSWORD_PLACEHOLDER>"
-        },
+        "connection_ref": "building_cua_host",
         "remote_verification_app": "Google Chrome",
         "verification_steps": [
           "Connect to remote host with NoMachine",
