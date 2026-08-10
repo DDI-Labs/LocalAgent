@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.3.1",
+  "acapPackageConf": {
+    "setup": {
+      "appName": "parkease_lite",
+      "vendor": "DDI Labs",
+      "friendlyName": "ParkEase LITE",
+      "vendorUrl": "https://ddilabs.ai",
+      "version": "0.1.0",
+      "runMode": "respawn"
+    },
+    "configuration": {
+      "settingPage": "index.html"
+    }
+  }
+}

@@ -1,0 +1,7 @@
+#!/bin/sh
+# ParkEase LITE demo stub. No runtime functionality — exists so the app
+# shows as "Running" in the camera's Apps list while the demo UI is served
+# from the html/ directory.
+while true; do
+    sleep 3600
+done

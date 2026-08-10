@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ParkEase LITE</title>
+<style>
+  :root{
+    --bg:#EAEBE7; --surface:#FFFFFF; --surface-2:#F4F5F1; --surface-3:#ECEEE8;
+    --ink:#1A2321; --ink-2:#4C5854; --ink-3:#7C8880; --line:#D7DAD2; --line-2:#E4E6DF;
+    --accent:#1E6B8C; --accent-ink:#16506A; --accent-soft:#E1EEF4;
+    --go:#2C7F52; --go-soft:#E1F0E7;
+    --stop:#B83B2C; --stop-soft:#F6E1DD;
+    --caution:#B9812A; --caution-soft:#F6ECD8;
+    --plate:#E6B441; --plate-ink:#2A2410;
+    --shadow:0 1px 2px rgba(26,35,33,.06),0 8px 24px rgba(26,35,33,.07);
+    --mono:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0F1518; --surface:#171F23; --surface-2:#1D272B; --surface-3:#232F34;
+      --ink:#E8ECEA; --ink-2:#A0AEA9; --ink-3:#6B7A74; --line:#2A363B; --line-2:#232E32;
+      --accent:#54A9C9; --accent-ink:#7FC3DD; --accent-soft:#173039;
+      --go:#4CB07C; --go-soft:#15291F;
+      --stop:#E06455; --stop-soft:#301C19;
+      --caution:#DFA646; --caution-soft:#2E2513;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1040px;margin:0 auto;padding:22px 20px 40px}
+
+  /* header */
+  .head{display:flex;align-items:center;gap:13px;flex-wrap:wrap;margin-bottom:18px}
+  .head .mk{width:38px;height:38px;border-radius:9px;background:var(--plate);color:var(--plate-ink);display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:14px;border:1.5px solid rgba(0,0,0,.3)}
+  .head h1{margin:0;font-size:20px;letter-spacing:-.02em;font-weight:650}
+  .head .cam{font-family:var(--mono);font-size:11.5px;color:var(--ink-3)}
+  .head .spacer{flex:1}
+  .tag{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.03em;padding:3px 9px;border-radius:6px;border:1px solid var(--line);color:var(--ink-2);background:var(--surface-2)}
+  .tag.demo{border-color:color-mix(in srgb,var(--caution) 50%,var(--line));color:var(--caution);background:var(--caution-soft)}
+
+  /* stat strip */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+  @media (max-width:640px){.stats{grid-template-columns:repeat(2,1fr)}}
+  .stat{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:11px 14px;box-shadow:var(--shadow)}
+  .stat .n{font-size:21px;font-weight:660;letter-spacing:-.02em;font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:5px}
+  .stat .n .u{font-size:11.5px;font-weight:520;color:var(--ink-3)}
+  .stat .l{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-top:2px}
+  .stat.sync .n{color:var(--go)}
+
+  /* panel grid */
+  .device{display:grid;grid-template-columns:1fr 1fr;gap:0;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}
+  @media (max-width:760px){.device{grid-template-columns:1fr}}
+  .dev-left{padding:20px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:16px}
+  @media (max-width:760px){.dev-left{border-right:0;border-bottom:1px solid var(--line)}}
+  .dev-right{padding:20px;background:var(--surface-2);display:flex;flex-direction:column;gap:16px}
+
+  /* commissioning checks */
+  .commiss{display:flex;flex-direction:column;gap:9px}
+  .check{display:flex;align-items:center;gap:11px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface);transition:box-shadow .25s ease}
+  .check .tick{width:22px;height:22px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:12px;font-weight:700;color:#fff;background:var(--ink-3)}
+  .check.ok .tick{background:var(--go)}
+  .check.warn .tick{background:var(--caution)}
+  .check.busy .tick{background:var(--accent)}
+  .check .lbl{font-size:13.5px;font-weight:580}
+  .check .meta{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-top:1px}
+  .check .right{margin-left:auto;text-align:right}
+  .check.pulse{box-shadow:0 0 0 3px color-mix(in srgb,var(--go) 35%,transparent)}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:640;padding:3px 9px 3px 8px;border-radius:999px;white-space:nowrap;line-height:1.4}
+  .badge .bd{width:7px;height:7px;border-radius:50%}
+  .b-go{background:var(--go-soft);color:var(--go)} .b-go .bd{background:var(--go)}
+  .b-caution{background:var(--caution-soft);color:var(--caution)} .b-caution .bd{background:var(--caution)}
+  .b-accent{background:var(--accent-soft);color:var(--accent-ink)} .b-accent .bd{background:var(--accent)}
+
+  /* buttons */
+  .testrow{display:flex;gap:9px;flex-wrap:wrap}
+  .btn{border:1px solid var(--line);background:transparent;color:var(--accent-ink);font-family:var(--sans);font-weight:600;font-size:12.5px;padding:7px 12px;border-radius:9px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+  .btn:hover{background:var(--accent-soft)}
+  .btn:disabled{opacity:.55;cursor:default}
+  .btn.solid{background:var(--accent);border-color:var(--accent);color:#fff}
+
+  /* ticker */
+  .ticker{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 13px;font-family:var(--mono);font-size:12px;display:flex;flex-direction:column;gap:7px;min-height:150px}
+  .ticker .ln{display:flex;gap:9px;align-items:baseline;color:var(--ink-2)}
+  .ticker .ln time{color:var(--ink-3);flex:none}
+  .ticker .g{color:var(--go);font-weight:600}
+  .ticker .r{color:var(--stop);font-weight:600}
+  .ticker .a{color:var(--caution);font-weight:600}
+  .ticker .b{color:var(--accent-ink);font-weight:600}
+  .ticker .ln.new{animation:fadein .35s ease}
+  @keyframes fadein{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+  h5.grp{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:600;margin:0 0 8px}
+
+  /* config lists */
+  .cfg-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 2px;border-bottom:1px solid var(--line-2);font-size:13px}
+  .cfg-item:last-child{border-bottom:0}
+  .cfg-item .k{color:var(--ink-2)}
+  .cfg-item .v{font-family:var(--mono);font-size:12.5px;color:var(--ink);font-weight:560;text-align:right}
+  .muted{color:var(--ink-3)}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;cursor:pointer;user-select:none}
+  .seg span{padding:3px 10px;font-size:12px;font-weight:600;color:var(--ink-3)}
+  .seg span.on{background:var(--accent);color:#fff}
+
+  /* modal */
+  .overlay{position:fixed;inset:0;background:color-mix(in srgb,var(--ink) 35%,transparent);display:none;place-items:center;padding:20px;z-index:10}
+  .overlay.open{display:grid}
+  .modal{width:min(400px,100%);background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.3);overflow:hidden}
+  .modal-h{padding:18px 20px 4px}
+  .modal-h .t{font-size:17px;font-weight:640}
+  .modal-h .d{color:var(--ink-3);font-size:13px;margin-top:2px}
+  .modal-b{padding:16px 20px 6px}
+  .modal-b label{display:block;font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:6px}
+  .input{width:100%;border:1px solid var(--line);background:var(--surface-2);border-radius:9px;padding:10px 12px;font-size:16px;color:var(--ink);font-family:var(--mono);letter-spacing:.12em;text-transform:uppercase;font-weight:600}
+  .modal-f{padding:14px 20px 18px;display:flex;justify-content:flex-end;gap:10px}
+  .result{margin-top:12px;padding:10px 12px;border-radius:9px;font-size:13px;font-weight:620;display:none;align-items:center;gap:8px}
+  .result.grant{display:flex;background:var(--go-soft);color:var(--go)}
+  .result.deny{display:flex;background:var(--stop-soft);color:var(--stop)}
+
+  footer{margin-top:20px;font-family:var(--mono);font-size:11px;color:var(--ink-3);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="head">
+    <span class="mk">PL</span>
+    <div>
+      <h1>ParkEase LITE</h1>
+      <div class="cam">P1465-LE &middot; ACCC8E123456 &middot; Entry lane</div>
+    </div>
+    <div class="spacer"></div>
+    <span class="tag demo">DEMO BUILD &middot; UI ONLY</span>
+    <span class="tag">v0.1.0</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat sync"><div class="n">v42</div><div class="l">Ruleset version</div></div>
+    <div class="stat"><div class="n">812</div><div class="l">Plates enrolled</div></div>
+    <div class="stat sync"><div class="n"><span id="syncAgo">8</span>s <span class="u">ago</span></div><div class="l">Last cloud nudge</div></div>
+    <div class="stat"><div class="n"><span id="lastRead">3</span>s <span class="u">ago</span></div><div class="l">Last plate read</div></div>
+  </div>
+
+  <div class="device">
+    <div class="dev-left">
+      <div class="commiss">
+        <div class="check ok" id="chkCloud">
+          <span class="tick">&#10003;</span>
+          <div><div class="lbl">Cloud connected</div><div class="meta" id="cloudMeta">ruleset v42 &middot; push live &middot; nudge 8s ago</div></div>
+          <div class="right"><span class="badge b-go" id="cloudBadge"><span class="bd"></span>OK</span></div>
+        </div>
+        <div class="check ok" id="chkGate">
+          <span class="tick">&#10003;</span>
+          <div><div class="lbl">Gate I/O ready</div><div class="meta" id="gateMeta">A9210 &middot; 192.168.1.70 &middot; out 1</div></div>
+          <div class="right"><span class="badge b-go" id="gateBadge"><span class="bd"></span>OK</span></div>
+        </div>
+        <div class="check ok" id="chkLpr">
+          <span class="tick">&#10003;</span>
+          <div><div class="lbl">Reading plates</div><div class="meta">Vaxtor &middot; last read <span id="lprAgo">3</span>s ago</div></div>
+          <div class="right"><span class="badge b-go"><span class="bd"></span>OK</span></div>
+        </div>
+        <div class="check ok">
+          <span class="tick">&#10003;</span>
+          <div><div class="lbl">Clock &amp; timezone</div><div class="meta">NTP synced &middot; TZ Australia/Sydney</div></div>
+          <div class="right"><span class="badge b-go"><span class="bd"></span>OK</span></div>
+        </div>
+      </div>
+
+      <div class="testrow">
+        <button class="btn" id="btnCloud">&#8635; Test cloud</button>
+        <button class="btn" id="btnGate">&#10514; Test gate pulse</button>
+        <button class="btn" id="btnSim">&#9655; Simulate plate</button>
+      </div>
+
+      <div>
+        <h5 class="grp">Recent activity</h5>
+        <div class="ticker" id="ticker" aria-live="polite"></div>
+      </div>
+    </div>
+
+    <div class="dev-right">
+      <div>
+        <h5 class="grp">Camera role</h5>
+        <div class="cfg-item"><span class="k">Lane role</span>
+          <span class="seg" id="laneSeg"><span class="on">Entry</span><span>Exit</span></span></div>
+        <div class="cfg-item"><span class="k">Site ID</span><span class="v">spv-erskineville</span></div>
+        <div class="cfg-item"><span class="k">Camera name</span><span class="v">Erskineville Entry</span></div>
+      </div>
+      <div>
+        <h5 class="grp">Gate hardware &middot; AXIS A9210</h5>
+        <div class="cfg-item"><span class="k">Module host</span><span class="v">192.168.1.70</span></div>
+        <div class="cfg-item"><span class="k">Gate output port</span><span class="v">1</span></div>
+        <div class="cfg-item"><span class="k">Gate sensor input</span><span class="v">2</span></div>
+        <div class="cfg-item"><span class="k">Intercom input</span><span class="v">3</span></div>
+        <div class="cfg-item"><span class="k">Arming input <span class="muted">(approach loop)</span></span><span class="v">4</span></div>
+        <div class="cfg-item"><span class="k">Entry-confirm input <span class="muted">(passage loop)</span></span><span class="v">5</span></div>
+        <div class="cfg-item"><span class="k">Pulse duration</span><span class="v">800 ms</span></div>
+      </div>
+      <div>
+        <h5 class="grp">Reads &amp; sync</h5>
+        <div class="cfg-item"><span class="k">Read plates only while armed</span><span class="v">On &middot; hold 5 s</span></div>
+        <div class="cfg-item"><span class="k">Min plate confidence</span><span class="v">60%</span></div>
+        <div class="cfg-item"><span class="k">Duplicate window</span><span class="v">5 s</span></div>
+        <div class="cfg-item"><span class="k">Cloud push (MQTT)</span><span class="v" style="color:var(--go)">Connected &middot; auto-set</span></div>
+        <div class="cfg-item"><span class="k">Fallback poll</span><span class="v">60 s</span></div>
+        <div class="cfg-item"><span class="k">If clock unsynced</span><span class="v">Deny guests</span></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span>ParkEase LITE &middot; DDI Labs</span>
+    <span>demo build &mdash; no gate control, no camera integration</span>
+  </footer>
+</div>
+
+<div class="overlay" id="simOverlay">
+  <div class="modal">
+    <div class="modal-h">
+      <div class="t">Simulate a plate read</div>
+      <div class="d">Runs the decision ladder against the cached ruleset.</div>
+    </div>
+    <div class="modal-b">
+      <label for="simPlate">Number plate</label>
+      <input class="input" id="simPlate" value="CJ92AK" maxlength="9" autocomplete="off">
+      <div class="result" id="simResult"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn" id="simCancel">Close</button>
+      <button class="btn solid" id="simRun">Run decision</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var WHITELIST = ["CJ92AK","BFR418","XT44LM","DKW902","EAB33C","QRZ551"];
+  var ticker = document.getElementById("ticker");
+  var syncAgo = 8, readAgo = 3;
+
+  function now(){
+    var d = new Date();
+    function p(n){ return (n<10?"0":"")+n; }
+    return d.getHours()+":"+p(d.getMinutes())+":"+p(d.getSeconds());
+  }
+  function line(html){
+    var ln = document.createElement("div");
+    ln.className = "ln new";
+    ln.innerHTML = "<time>"+now()+"</time><span>"+html+"</span>";
+    ticker.insertBefore(ln, ticker.firstChild);
+    while (ticker.children.length > 8) ticker.removeChild(ticker.lastChild);
+  }
+  function randPlate(){
+    var L="ABCDEFGHJKLMNPQRSTVWXYZ", D="0123456789", s="";
+    for (var i=0;i<2;i++) s+=L[Math.floor(Math.random()*L.length)];
+    for (i=0;i<2;i++) s+=D[Math.floor(Math.random()*D.length)];
+    for (i=0;i<2;i++) s+=L[Math.floor(Math.random()*L.length)];
+    return s;
+  }
+
+  // seed history
+  line('<span class="a">OVERRIDE</span> gate-open, no grant &middot; alert queued');
+  line('EXIT read BFR418 &middot; reported');
+  line('<span class="r">DENY</span> ZZ109Q &middot; unknown_plate');
+  line('<span class="g">GRANT</span> CJ92AK &rarr; pulse out 1 &middot; 800ms');
+
+  // ambient counters
+  setInterval(function(){
+    syncAgo++; readAgo++;
+    if (syncAgo > 60) syncAgo = 1;
+    document.getElementById("syncAgo").textContent = syncAgo;
+    document.getElementById("lastRead").textContent = readAgo;
+    document.getElementById("lprAgo").textContent = readAgo;
+    document.getElementById("cloudMeta").textContent =
+      "ruleset v42 · push live · nudge "+syncAgo+"s ago";
+  }, 1000);
+
+  // ambient traffic
+  function ambient(){
+    var roll = Math.random();
+    if (roll < 0.55){
+      var pl = WHITELIST[Math.floor(Math.random()*WHITELIST.length)];
+      line('<span class="g">GRANT</span> '+pl+' &rarr; pulse out 1 &middot; 800ms');
+    } else if (roll < 0.75){
+      line('<span class="r">DENY</span> '+randPlate()+' &middot; unknown_plate');
+    } else {
+      line('EXIT read '+randPlate()+' &middot; reported');
+    }
+    readAgo = 0;
+    setTimeout(ambient, 6000 + Math.random()*9000);
+  }
+  setTimeout(ambient, 5000);
+
+  // test cloud
+  document.getElementById("btnCloud").addEventListener("click", function(){
+    var btn = this, badge = document.getElementById("cloudBadge");
+    var chk = document.getElementById("chkCloud");
+    btn.disabled = true;
+    badge.className = "badge b-accent"; badge.innerHTML = '<span class="bd"></span>Checking…';
+    setTimeout(function(){
+      badge.className = "badge b-go"; badge.innerHTML = '<span class="bd"></span>OK';
+      chk.classList.add("pulse");
+      setTimeout(function(){ chk.classList.remove("pulse"); }, 900);
+      syncAgo = 0;
+      line('<span class="b">SYNC</span> ruleset v42 &middot; up to date &middot; 412ms');
+      btn.disabled = false;
+    }, 1200);
+  });
+
+  // test gate pulse
+  document.getElementById("btnGate").addEventListener("click", function(){
+    var btn = this, badge = document.getElementById("gateBadge");
+    var chk = document.getElementById("chkGate");
+    btn.disabled = true;
+    badge.className = "badge b-accent"; badge.innerHTML = '<span class="bd"></span>Pulsing…';
+    chk.classList.add("pulse");
+    setTimeout(function(){
+      chk.classList.remove("pulse");
+      badge.className = "badge b-go"; badge.innerHTML = '<span class="bd"></span>OK';
+      line('<span class="b">PULSE</span> out 1 &middot; 800ms &middot; test');
+      btn.disabled = false;
+    }, 800);
+  });
+
+  // lane role toggle
+  document.getElementById("laneSeg").addEventListener("click", function(){
+    var kids = this.children;
+    for (var i=0;i<kids.length;i++) kids[i].classList.toggle("on");
+  });
+
+  // simulate plate modal
+  var overlay = document.getElementById("simOverlay");
+  var result = document.getElementById("simResult");
+  document.getElementById("btnSim").addEventListener("click", function(){
+    result.className = "result"; overlay.classList.add("open");
+    document.getElementById("simPlate").focus();
+  });
+  document.getElementById("simCancel").addEventListener("click", function(){
+    overlay.classList.remove("open");
+  });
+  overlay.addEventListener("click", function(e){
+    if (e.target === overlay) overlay.classList.remove("open");
+  });
+  document.getElementById("simRun").addEventListener("click", function(){
+    var btn = this;
+    var plate = document.getElementById("simPlate").value.trim().toUpperCase().replace(/\s+/g,"");
+    if (!plate) return;
+    btn.disabled = true;
+    result.className = "result"; result.style.display = "flex";
+    result.style.background = "var(--surface-2)"; result.style.color = "var(--ink-2)";
+    result.textContent = "Reading…";
+    setTimeout(function(){
+      result.style.background = ""; result.style.color = "";
+      readAgo = 0;
+      if (WHITELIST.indexOf(plate) >= 0){
+        result.className = "result grant";
+        result.innerHTML = "&#10003;&nbsp; GRANT — Residents whitelist · pulse out 1";
+        line('<span class="g">GRANT</span> '+plate+' &rarr; pulse out 1 &middot; 800ms &middot; simulated');
+      } else {
+        result.className = "result deny";
+        result.innerHTML = "&#10007;&nbsp; DENY — no matching list or pass";
+        line('<span class="r">DENY</span> '+plate+' &middot; unknown_plate &middot; simulated');
+      }
+      btn.disabled = false;
+    }, 700);
+  });
+})();
+</script>
+</body>
+</html>
