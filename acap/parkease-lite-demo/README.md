@@ -8,7 +8,11 @@ itself.
 
 **It has no real functionality.** The daemon is a sleep loop; the page is
 static HTML with simulated data. It does not talk to Vaxtor, the A9210, or
-ParkEase Cloud. The page is labelled "DEMO BUILD · UI ONLY".
+ParkEase Cloud. The page itself carries no demo labelling — it is styled as
+the finished product for presentation purposes, so be clear with the audience
+that it is a preview. A "Lock & hide" button collapses the configuration
+column (persisted in the browser via localStorage); "Show configuration"
+brings it back.
 
 ## Build
 

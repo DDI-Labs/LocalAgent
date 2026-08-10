@@ -39,7 +39,6 @@
   .head .cam{font-family:var(--mono);font-size:11.5px;color:var(--ink-3)}
   .head .spacer{flex:1}
   .tag{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.03em;padding:3px 9px;border-radius:6px;border:1px solid var(--line);color:var(--ink-2);background:var(--surface-2)}
-  .tag.demo{border-color:color-mix(in srgb,var(--caution) 50%,var(--line));color:var(--caution);background:var(--caution-soft)}
 
   /* stat strip */
   .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
@@ -118,6 +117,14 @@
   .result.grant{display:flex;background:var(--go-soft);color:var(--go)}
   .result.deny{display:flex;background:var(--stop-soft);color:var(--stop)}
 
+  /* config lock */
+  .cfg-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:-4px}
+  .device.cfg-hidden{grid-template-columns:1fr}
+  .device.cfg-hidden .dev-left{border-right:0}
+  .device.cfg-hidden .dev-right{display:none}
+  .cfgbar{display:none;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding:11px 16px;border:1px solid var(--line);border-radius:11px;background:var(--surface);box-shadow:var(--shadow);font-size:13px;color:var(--ink-2)}
+  .cfgbar.on{display:flex}
+
   footer{margin-top:20px;font-family:var(--mono);font-size:11px;color:var(--ink-3);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
 </style>
 </head>
@@ -131,8 +138,7 @@
       <div class="cam">P1465-LE &middot; ACCC8E123456 &middot; Entry lane</div>
     </div>
     <div class="spacer"></div>
-    <span class="tag demo">DEMO BUILD &middot; UI ONLY</span>
-    <span class="tag">v0.1.0</span>
+    <span class="tag">v0.1.1</span>
   </div>
 
   <div class="stats">
@@ -179,7 +185,11 @@
       </div>
     </div>
 
-    <div class="dev-right">
+    <div class="dev-right" id="cfgPanel">
+      <div class="cfg-head">
+        <h5 class="grp" style="margin:0">Configuration</h5>
+        <button class="btn" id="btnLockCfg" title="Hide configuration from this page once commissioning is done">&#128274; Lock &amp; hide</button>
+      </div>
       <div>
         <h5 class="grp">Camera role</h5>
         <div class="cfg-item"><span class="k">Lane role</span>
@@ -209,9 +219,14 @@
     </div>
   </div>
 
+  <div class="cfgbar" id="cfgBar">
+    <span>&#128274; Configuration locked &middot; set <span id="lockDate"></span></span>
+    <button class="btn" id="btnShowCfg">Show configuration</button>
+  </div>
+
   <footer>
     <span>ParkEase LITE &middot; DDI Labs</span>
-    <span>demo build &mdash; no gate control, no camera integration</span>
+    <span>ddilabs.ai</span>
   </footer>
 </div>
 
@@ -322,6 +337,40 @@
       line('<span class="b">PULSE</span> out 1 &middot; 800ms &middot; test');
       btn.disabled = false;
     }, 800);
+  });
+
+  // configuration lock / hide
+  var device = document.querySelector(".device");
+  var cfgBar = document.getElementById("cfgBar");
+  var lockDate = document.getElementById("lockDate");
+  function applyLock(state){
+    if (state && state.locked){
+      device.classList.add("cfg-hidden");
+      cfgBar.classList.add("on");
+      lockDate.textContent = state.when || "";
+    } else {
+      device.classList.remove("cfg-hidden");
+      cfgBar.classList.remove("on");
+    }
+  }
+  function readLock(){
+    try { return JSON.parse(localStorage.getItem("pl_cfg_lock")) || null; }
+    catch(e){ return null; }
+  }
+  function writeLock(state){
+    try { localStorage.setItem("pl_cfg_lock", JSON.stringify(state)); } catch(e){}
+  }
+  applyLock(readLock());
+  document.getElementById("btnLockCfg").addEventListener("click", function(){
+    var d = new Date();
+    var when = d.getDate()+" "+["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()]+" "+d.getFullYear();
+    var state = {locked:true, when:when};
+    writeLock(state); applyLock(state);
+    line('<span class="b">CONFIG</span> locked by operator &middot; hidden from panel');
+  });
+  document.getElementById("btnShowCfg").addEventListener("click", function(){
+    writeLock({locked:false}); applyLock(null);
+    line('<span class="b">CONFIG</span> unlocked by operator');
   });
 
   // lane role toggle
